@@ -609,6 +609,7 @@ function bannerHtml(){
     const lab=pl=>p.type==='mult'?`${pl.x}× ${pl.min}m`:`+${pl.pts}`;
     const ladder=p.places.map((pl,i)=>byRank[i]!=null?`<span class="chip" style="text-decoration:line-through;opacity:.6">${ORD[i]} ${esc(team(byRank[i]).short)}</span>`:`<span class="chip pts">${ORD[i]} ${lab(pl)}</span>`).join('');
     const nowR=!mine&&pingReward(p,taken,me.teamId,n);
+    if(mine){ h+=`<div class="banner mult"><div class="row sp"><div><b>✅ Completed: ${esc(sp.name)}</b><div class="small">You got ${ORD[mine.rank]}: <b>${esc(mine.text)}</b></div></div><div style="text-align:right"><div class="small mut">ends in</div><div class="big" data-until="${p.deadline}">${mmss(p.deadline-n)}</div></div></div><div style="margin-top:6px">${ladder}</div></div>`; return; }
     h+=`<div class="banner ping"><div class="row sp"><div><b>📍 Be at ${esc(sp.name)}</b><div class="small">${esc(p.msg||'Get your whole team there!')} Get within ${p.zone} yards.</div></div>
       <div class="big" data-until="${p.deadline}">${mmss(p.deadline-n)}</div></div>
       <div style="margin-top:6px">${ladder}</div>
@@ -616,9 +617,10 @@ function bannerHtml(){
       <div class="row" style="margin-top:6px">${d!=null&&!mine&&sp.x!=null?ptrHtml(bearingTo(loc,sp)):''}<div class="small grow">${d!=null?(d<=p.zone?`<b>You are in the zone.</b>`:`Head <b>${heading==null?COMP[Math.round(bearingTo(loc,sp)/45)%8]:'where the arrow points'}</b>, about <b>${d} yards</b> away.`)+(loc.acc?' (GPS ±'+Math.round(loc.acc)+' m)':''):'Waiting for your location.'}${heading==null&&typeof DeviceOrientationEvent!=='undefined'&&!mine?` <button class="sm" data-act="compass">Use compass</button>`:''}</div></div>
       <div class="row sp" style="margin-top:6px">${mine?`<span class="chip ok">You got ${ORD[mine.rank]}: ${esc(mine.text)}</span>`:taken>=p.places.length?`<span class="chip neg">All places taken</span>`:`<button class="pri sm" data-act="checkin" data-id="${p.id}" ${S.gameOn?'':'disabled'}>I'm here</button>`}</div></div>`;
   });
-  activeHunts().forEach(x=>{ const hp=S.huntPos[x.id];
-    if(x.claims&&x.claims[me.teamId]) h+=`<div class="banner mult small">✓ Your team found <b>${esc(x.leaderName)}</b></div>`;
-    else h+=`<div class="banner ping"><div class="row sp"><div><b>🔍 Find ${esc(x.leaderName)}</b><div class="small">${hp?`Last seen ${ago(hp.ts)}, shown as a star on the Map tab`:'Waiting for their first location ping'}</div></div>
+  S.hunts.forEach(x=>{ if(!S.gameOn) return; const hp=S.huntPos[x.id], cl=x.claims&&x.claims[me.teamId];
+    if(cl){ if(x.state==='live'||n-cl<20*60000) h+=`<div class="banner mult"><div><b>✅ Found ${esc(x.leaderName)}</b><div class="small">${esc(hrew(x))} earned${x.state==='done'?'. Every team has found them.':''}</div></div></div>`; return; }
+    if(x.state!=='live') return;
+    h+=`<div class="banner ping"><div class="row sp"><div><b>🔍 Find ${esc(x.leaderName)}</b><div class="small">${hp?`Last seen ${ago(hp.ts)}, shown as a star on the Map tab`:'Waiting for their first location ping'}</div></div>
       ${hp?`<div style="text-align:right"><div class="small mut">next ping</div><div class="big" data-until="${hp.ts+30000}">${mmss(hp.ts+30000-n)}</div></div>`:''}</div>
       <div class="row sp" style="margin-top:6px"><span class="chip pts">${hrew(x)}</span><button class="pri sm" data-act="hclaim" data-id="${x.id}">Enter code</button></div></div>`; });
   return h;
@@ -1085,10 +1087,11 @@ document.addEventListener('click',e=>{
   else if(a==='gend'){ if(Date.now()<endArm){ endArm=0; endGame(); } else { endArm=Date.now()+4000; render(); setTimeout(render,4100); } }
   else if(a==='calopen'){ calib={busy:null,prog:0,msg:''}; calAdd={on:false,x:null,y:null,name:''}; renderCalib(); }
   else if(a==='calrec') recordSpot(id);
+  else if(a==='sndtest') snd(v);
   else if(a==='calclear'){ S.calib={}; fitKey=''; save(); renderCalib(); }
-  else if(a==='caladdon'){ calAdd={on:true,x:null,y:null,name:''}; renderCalib(); }
+  else if(a==='caladdon'){ calAdd={on:true,x:null,y:null,name:''}; calib.msg=''; renderCalib(true); }
   else if(a==='caladdoff'){ calAdd={on:false,x:null,y:null,name:''}; renderCalib(); }
-  else if(a==='calsave'){ const nm=(($('#cal-name')||{}).value||calAdd.name||'').trim()||('Point '+(S.cpts.length+1)); if(calAdd.x==null) return; S.cpts.push({id:'u'+uid(),name:nm.slice(0,30),x:Math.round(calAdd.x),y:Math.round(calAdd.y)}); calAdd={on:false,x:null,y:null,name:''}; fitKey=''; save(); renderCalib(); }
+  else if(a==='calsave'){ const nm=(($('#cal-name')||{}).value||calAdd.name||'').trim()||('Point '+(S.cpts.length+1)); if(calAdd.x==null) return; const nid='u'+uid(); S.cpts.push({id:nid,name:nm.slice(0,30),x:Math.round(calAdd.x),y:Math.round(calAdd.y)}); calAdd={on:false,x:null,y:null,name:''}; calib.msg='Saved "'+nm.slice(0,30)+'". Stand on that spot and tap Record here (shown under My points).'; calib.ok=true; fitKey=''; save(); renderCalib(false,nid); }
   else if(a==='caldel'){ S.cpts=S.cpts.filter(p=>p.id!==id); delete S.calib[id]; fitKey=''; save(); renderCalib(); }
   else if(a==='trstart') startTrace();
   else if(a==='trstop') stopTrace();
@@ -1198,16 +1201,43 @@ const SOUNDS={
   ok:     [[880,.15,0]],
   sos:    [[880,.15,0],[660,.15,.2],[880,.15,.4],[660,.15,.6],[880,.3,.8]],
   reveal: [[523,.1,0],[784,.22,.12]],
-  fanfare:[[523,.15,0],[659,.15,.16],[784,.15,.32],[1047,.5,.48],[784,.15,.98],[1047,.7,1.14]]
+  fanfare:[[523,.15,0],[659,.15,.16],[784,.15,.32],[1047,.5,.48],[784,.15,.98],[1047,.7,1.14]],
+  /* finale slideshow. Entries: [freq, length, start, wave, volume, endFreq] or ['n', length, start, volume, highpassHz] for noise */
+  rv_intro:[[200,.55,0,'sawtooth',.05,900],[784,.14,.5,'triangle',.12],[988,.14,.64,'triangle',.12],[1319,.5,.78,'triangle',.14]],
+  rv_s1:  [[659,.1,0,'triangle',.13],[880,.1,.11,'triangle',.13],[1319,.4,.22,'triangle',.14],[2637,.25,.3,'sine',.04]],
+  rv_s2:  [[523,.18,0,'triangle',.14],[659,.18,.12,'triangle',.14],[784,.18,.24,'triangle',.14],[1047,.5,.36,'triangle',.15]],
+  rv_s3:  [[392,.16,0,'sawtooth',.06],[523,.16,.14,'sawtooth',.06],[784,.5,.28,'sawtooth',.07],[1568,.3,.3,'sine',.05]],
+  rv_ouch:[[320,.6,0,'square',.07,110],['n',.12,0,.05,1200]],
+  rv_last:[[311,.34,0,'sawtooth',.075],[294,.34,.4,'sawtooth',.075],[277,.34,.8,'sawtooth',.075],[277,1.0,1.22,'sawtooth',.075,175]],
+  rv_mid: [[523,.12,0,'triangle',.12],[659,.12,.14,'triangle',.12],[784,.35,.28,'triangle',.13]],
+  rv_second:[[784,.7,0,'sine',.12],[988,.7,.18,'sine',.12],[1175,1.0,.36,'sine',.13],[2349,.6,.4,'sine',.03]],
+  rv_champ:[['n',.05,0,.03,2500],['n',.05,.1,.035,2500],['n',.05,.2,.04,2500],['n',.05,.3,.045,2500],['n',.05,.4,.05,2500],['n',.05,.5,.055,2500],['n',.05,.6,.06,2500],['n',.05,.7,.065,2500],['n',.05,.8,.07,2500],['n',.05,.9,.075,2500],['n',.05,1.0,.08,2500],['n',.05,1.08,.085,2500],['n',.05,1.16,.09,2500],['n',.05,1.24,.095,2500],['n',.05,1.32,.1,2500],['n',.05,1.4,.105,2500],['n',.05,1.48,.11,2500],
+    ['n',1.6,1.6,.16,5000],[523,1.1,1.6,'sawtooth',.06],[659,1.1,1.6,'sawtooth',.06],[784,1.1,1.6,'sawtooth',.06],[1047,1.1,1.6,'triangle',.1],
+    [784,.2,2.4,'triangle',.12],[1047,.2,2.62,'triangle',.12],[1319,.2,2.84,'triangle',.12],[1568,.9,3.06,'triangle',.14],[3136,.7,3.1,'sine',.03]],
+  rv_final:[[1047,.7,0,'sine',.1],[784,.7,.28,'sine',.1],[659,.7,.56,'sine',.1],[523,1.3,.84,'sine',.11]]
 };
+function revSound(sl,i){
+  if(sl.kind==='intro') return 'rv_intro';
+  if(sl.kind==='champion') return 'rv_champ';
+  if(sl.kind==='final') return 'rv_final';
+  if(sl.kind==='place') return sl.last?'rv_last':sl.place===2?'rv_second':'rv_mid';
+  if(/Ouch/i.test(sl.title||'')) return 'rv_ouch';
+  return ['rv_s1','rv_s2','rv_s3'][i%3];
+}
+const REV_SOUNDS=[['rv_intro','Intro'],['rv_s1','Award A'],['rv_s2','Award B'],['rv_s3','Award C'],['rv_ouch','Ouch'],['rv_mid','3rd and up'],['rv_second','2nd place'],['rv_last','Last place'],['rv_champ','Champion'],['rv_final','Final']];
 function audioCtx(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){} return actx; }
 document.addEventListener('pointerdown',()=>{ audioCtx(); },{passive:true});
 function snd(name){
   if(!alertsOn()) return; const pat=SOUNDS[name]; if(!pat) return;
   const c=audioCtx(); if(!c) return;
   try{ const t0=c.currentTime+.02;
-    pat.forEach(([f,d,at])=>{ const o=c.createOscillator(), g=c.createGain(); o.type='sine'; o.frequency.value=f;
-      g.gain.setValueAtTime(0.0001,t0+at); g.gain.linearRampToValueAtTime(.14,t0+at+.015); g.gain.exponentialRampToValueAtTime(.001,t0+at+d);
+    pat.forEach(a=>{
+      if(a[0]==='n'){ const len=Math.max(1,Math.floor(c.sampleRate*a[1])), buf=c.createBuffer(1,len,c.sampleRate), d=buf.getChannelData(0);
+        for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+        const src=c.createBufferSource(); src.buffer=buf; const hp=c.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=a[4]||3000; const g=c.createGain(); g.gain.value=a[3]||.08;
+        src.connect(hp); hp.connect(g); g.connect(c.destination); src.start(t0+a[2]); return; }
+      const [f,d,at,wave,vol,fEnd]=a, o=c.createOscillator(), g=c.createGain(); o.type=wave||'sine'; o.frequency.setValueAtTime(f,t0+at); if(fEnd) o.frequency.exponentialRampToValueAtTime(fEnd,t0+at+d);
+      g.gain.setValueAtTime(0.0001,t0+at); g.gain.linearRampToValueAtTime(vol||.14,t0+at+.015); g.gain.exponentialRampToValueAtTime(.001,t0+at+d);
       o.connect(g); g.connect(c.destination); o.start(t0+at); o.stop(t0+at+d+.03); });
   }catch(e){}
 }
@@ -1280,7 +1310,7 @@ function drawReveal(){
   const ctl = me.owner ? `<button data-act="revback" ${r.step===0?'disabled':''}>◀ Back</button><button class="pri" data-act="revnext" ${last?'disabled':''}>Next ▶</button><button data-act="revauto">${r.auto?'⏸ Auto on':'▶ Auto'}</button><button class="bad" data-act="revend">End</button>`
     : `<span class="mut small">Slide ${r.step+1} of ${r.slides.length} · the owner is running the show</span>${last?`<button data-act="revhide">Close</button>`:''}`;
   el.classList.add('on'); el.innerHTML=`<div class="rv-body" style="position:relative">${revSlide(sl)}</div><div class="rv-bar">${ctl}${me.owner?`<span class="mut small" style="width:100%;text-align:center">Slide ${r.step+1} of ${r.slides.length}</span>`:''}</div>`;
-  snd(sl.kind==='champion'?'fanfare':'reveal');
+  snd(revSound(sl,r.step));
 }
 function revSet(step){ const r=S.reveal; if(!r) return; r.step=Math.max(0,Math.min(r.slides.length-1,step)); r.stepTs=Date.now(); const k=r.slides[r.step].kind; if((k==='champion'||k==='final')&&S.freeze){ S.freeze=false; S.frozen=null; } save(); }
 function revAuto(){ const r=S.reveal; if(!me||!me.owner||!r||!r.active||!r.auto||Date.now()-r.stepTs<r.autoMs) return; if(r.step<r.slides.length-1) revSet(r.step+1); else { r.auto=false; save(); } }
@@ -1382,7 +1412,7 @@ function helpBar(){
 }
 
 /* ================= CALIBRATION ================= */
-let calib={busy:null,prog:0,msg:''};
+let calib={busy:null,prog:0,msg:'',ok:false};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const trKey='taskhunt_trace';
 let TR={on:false,pts:[],bad:0,last:null,wl:null,err:''}, traceWatch=null, calAdd={on:false,x:null,y:null,name:''};
@@ -1446,27 +1476,36 @@ function calRow(p,i,st){
    <div class="grow" style="min-width:0"><b>${esc(p.name)}</b><div class="small ${c?'':'mut'}">${busy?`Reading GPS… ${calib.prog} of 5`:c?`Recorded ${ago(c.ts)} · ±${Math.round(c.acc)} m${c.acc>20?' · weak GPS, try again in the open':''}`:'Not recorded yet'}</div>${chip?`<div style="margin-top:4px">${chip}</div>`:''}</div>
    <div style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto"><button class="${c?'':'pri'} sm" data-act="calrec" data-id="${p.id}" ${calib.busy?'disabled':''}>${c?'Re-record':'Record here'}</button>${p.custom?`<button class="sm bad" data-act="caldel" data-id="${p.id}">Remove</button>`:''}</div></div></div>`;
 }
-function renderCalib(){
-  const all=calPts(), st=fitStats(), nrec=all.filter(p=>S.calib[p.id]).length;
+function renderCalib(toTop,focusId){
+  const keep=$('#modal').classList.contains('on')?$('#sheet').scrollTop:0;
+  const all=calPts(), st=fitStats();
   const sum = !st ? `<div class="banner info small">Record at least 2 points to line the map up with real GPS. 4 or more spread around the property is best.</div>`
     : `<div class="banner info small"><b>Map fit: ${st.rms<=12?'good':st.rms<=25?'okay':'needs work'}.</b> Average error ${Math.round(st.rms)} yd across ${st.n} points${st.n<=2?'. With only 2 points the fit cannot be checked, so record a third.':`; worst is ${esc(st.worst.p.name)} at ${Math.round(st.worst.res)} yd.`}${st.worst.res>25&&st.n>2?' Re-record that one, standing right on the spot.':''}<div class="mut" style="margin-top:4px">Error includes the map drawing itself, which is not exactly to scale, so a few yards is normal.</div></div>`;
   const grp=(title,from,to)=>`<div class="cgrp">${title}</div>`+all.slice(from,to).map((p,j)=>calRow(Object.assign({},p),from+j,st)).join('');
   const customs=all.slice(SPOTS.length+CALX.length).map(p=>Object.assign({custom:true},p));
   const rows=grp('Main spots',0,SPOTS.length)+grp('Roads and paths',SPOTS.length,SPOTS.length+CALX.length)+(customs.length?`<div class="cgrp">My points</div>`+customs.map((p,j)=>calRow(p,SPOTS.length+CALX.length+j,st)).join(''):'');
+  const addForm=calAdd.on?`<div class="card" style="border-color:#ff9d00;margin:8px 0"><b>Add my own point</b>
+    <div class="small mut">1. Tap the map below where you will stand. 2. Name it. 3. Save, then tap Record here on it under My points.</div>
+    <label>Name</label><input id="cal-name" maxlength="30" placeholder="e.g. Road by the dock" value="${esc(calAdd.name||'')}">
+    <div class="small" style="margin-top:6px;color:var(${calAdd.x!=null?'--ok':'--warn'})">${calAdd.x!=null?'✓ Spot chosen. See the orange ring on the map.':'Tap the map below to choose the spot.'}</div>
+    <div class="row" style="margin-top:8px"><button class="pri grow" data-act="calsave" ${calAdd.x==null?'disabled':''}>Save point</button><button class="grow" data-act="caladdoff">Cancel</button></div></div>`:'';
   openModal(`<h3 style="margin:0 0 4px">Calibrate and check the map</h3><div class="mut small" style="margin-bottom:8px">Stand at the middle of each point, hold the phone still and tap Record. It averages 5 GPS readings. Numbers match the map. Green dots are well placed, yellow is OK, red needs a redo.</div>
-   ${sum}<div style="margin:8px 0">${calMapSvg(st)}</div>
+   ${sum}
+   ${calib.msg?`<div class="banner ${calib.ok?'mult':'info'} small" style="margin-top:8px">${esc(calib.msg)}</div>`:''}
+   ${addForm}
+   <div style="margin:8px 0">${calMapSvg(st)}</div>
+   ${calAdd.on?'':`<button style="width:100%;margin-bottom:4px" data-act="caladdon" ${calib.busy?'disabled':''}>+ Add my own point</button>`}
    ${rows}
-   <div class="card" style="margin:10px 0"><b>Add my own point</b><div class="small mut">For a road end or path you want to check. Tap ${calAdd.on?'the map above where you will stand':'the button, then tap the map'}, name it, then record it.</div>
-    ${calAdd.on?`<label>Name</label><input id="cal-name" maxlength="30" placeholder="e.g. Road by the dock" value="${esc(calAdd.name||'')}"><div class="small" style="margin-top:4px">${calAdd.x!=null?'Spot chosen on the map.':'Now tap the map above.'}</div><div class="row" style="margin-top:8px"><button class="pri grow" data-act="calsave" ${calAdd.x==null?'disabled':''}>Save point</button><button class="grow" data-act="caladdoff">Cancel</button></div>`:`<button style="width:100%;margin-top:8px" data-act="caladdon" ${calib.busy?'disabled':''}>+ Add a point</button>`}</div>
    <div class="card" style="margin:10px 0"><b>Walk the route</b><div class="small mut" style="margin-top:2px">Start, put the phone in your hand, and walk the roads and paths, including both ends. Your path is drawn in yellow on the map. If it follows the roads you walked, tracking is accurate. If it drifts into the lake or between paths, re-record points near that part.</div>
     <div class="row" style="margin-top:8px;flex-wrap:wrap">${TR.on?`<button class="bad grow" data-act="trstop">■ Stop walking</button>`:`<button class="pri grow" data-act="trstart" ${calib.busy?'disabled':''}>▶ Start walking</button>`}<button class="grow" data-act="trclear" ${TR.on||!TR.pts.length?'disabled':''}>Clear trace</button></div>
     <div class="small mut trstat" style="margin-top:6px">${esc(traceStatText())}</div></div>
-   ${calib.msg?`<div class="small" style="color:var(--warn);margin-top:6px">${esc(calib.msg)}</div>`:''}
    <div class="row" style="margin-top:12px"><button class="bad grow" data-act="calclear" ${calib.busy?'disabled':''}>Clear recorded</button><button class="pri grow" data-act="mclose">Done</button></div>`);
+  const sh=$('#sheet'); sh.scrollTop=toTop?0:keep;
+  if(focusId){ const el=sh.querySelector('[data-act=calrec][data-id="'+focusId+'"]'); if(el) el.scrollIntoView({block:'center'}); }
 }
 async function recordSpot(id){
   if(!navigator.geolocation){ calib.msg='GPS is not available in this browser.'; renderCalib(); return; }
-  calib.busy=id; calib.prog=0; calib.msg=''; renderCalib(); const pts=[];
+  calib.busy=id; calib.prog=0; calib.msg=''; calib.ok=false; renderCalib(); const pts=[];
   for(let i=0;i<5;i++){
     try{ const c=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res(p.coords),rej,{enableHighAccuracy:true,maximumAge:0,timeout:15000})); pts.push(c); }catch(e){ break; }
     calib.prog=i+1; renderCalib(); if(i<4) await sleep(1000);
@@ -1497,6 +1536,7 @@ function teamsCard(){
 function revealCard(){
   const r=S.reveal, active=r&&r.active;
   return `<div class="card"><h3>🏆 Results and winner reveal</h3><div class="small mut">Every phone shows the same slide at the same time, and you control the pace. Order: fun awards, then last place up to the winner.${S.game.state==='running'?' The game is still running.':''}</div>
+   <div class="small mut" style="margin-top:8px">Hear the sounds (phone volume up):</div><div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${REV_SOUNDS.map(x=>`<button class="sm" data-act="sndtest" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>
    ${active?`<div class="row" style="margin-top:8px"><span class="chip ok">Live: slide ${r.step+1} of ${r.slides.length}</span><button class="sm bad" data-act="revend">End reveal</button></div>`:`<button class="pri" style="width:100%;margin-top:10px" data-act="revstart">Start the reveal for everyone</button>`}</div>`;
 }
 /* ================= LEADER HUNTS ================= */
