@@ -320,8 +320,8 @@ function gameRemain(){ const g=S.game; if(g.state==='running') return Math.max(0
 function clockText(){ const g=S.game; if(g.state==='running') return mmss(gameRemain())+' left'; if(g.state==='paused') return 'paused · '+mmss(gameRemain()); if(g.state==='ended') return 'game over'; return 'not started'; }
 function setGame(st){ S.game.state=st; S.gameOn=(st==='running'); }
 function startGame(mins){ const n=Date.now(); S.game={state:'running',dur:mins*60000,startedAt:n,endsAt:n+mins*60000,remain:0}; S.gameOn=true; ev(`🏁 Task Hunt has started! You have ${mins} minutes.`,['all'],{snd:'hunt',by:null}); save(); }
-function pauseGame(){ const g=S.game; if(g.state!=='running') return; g.remain=gameRemain(); setGame('paused'); S.locs={}; ev('Task Hunt is paused',['all']); save(); }
-function resumeGame(){ const g=S.game; if(g.state!=='paused') return; g.endsAt=Date.now()+g.remain; setGame('running'); ev('Task Hunt is back on',['all'],{snd:'ok'}); save(); }
+function pauseGame(){ const g=S.game; if(g.state!=='running') return; S.hunts.forEach(h=>{ if(h.state==='live'&&h.endsAt){ h.remain=Math.max(0,h.endsAt-Date.now()); h.endsAt=0; h.gpaused=true; } }); g.remain=gameRemain(); setGame('paused'); S.locs={}; ev('Task Hunt is paused',['all']); save(); }
+function resumeGame(){ const g=S.game; if(g.state!=='paused') return; S.hunts.forEach(h=>{ if(h.gpaused){ h.endsAt=Date.now()+(h.remain||0); h.remain=null; h.gpaused=false; } }); g.endsAt=Date.now()+g.remain; setGame('running'); ev('Task Hunt is back on',['all'],{snd:'ok'}); save(); }
 function endGame(){ const g=S.game; if(g.state==='ended'||g.state==='idle') return; g.remain=0; setGame('ended'); S.locs={}; ev('🏁 Time is up! Task Hunt is over. Judges are finishing the last proofs.',['all'],{snd:'tier',by:null}); save(); }
 function extendGame(min){ const g=S.game; if(g.state==='running') g.endsAt+=min*60000; else if(g.state==='paused') g.remain+=min*60000; else if(g.state==='ended'){ g.endsAt=Date.now()+min*60000; g.w5=false; g.w1=false; setGame('running'); } else return; ev(`⏱ ${min} more minutes added`,['all'],{snd:'ok'}); save(); }
 function gameTick(){
@@ -600,6 +600,14 @@ function pingPrompt(){
      <div class="row" style="margin-top:12px"><button class="ghost grow" data-act="mclose">Later</button><button class="ok grow" data-act="checkin" data-id="${p.id}">Claim reward</button></div>`);
   });
 }
+const DONE_MS=8000;
+function freshDone(){
+  if(!me||me.role!=='player') return '';
+  const n=Date.now(), out=[];
+  S.pings.forEach(p=>{ const c=p.checkins&&p.checkins[me.teamId]; if(c&&n-c.ts<DONE_MS&&p.deadline>n) out.push(p.id); });
+  S.hunts.forEach(x=>{ const c=x.claims&&x.claims[me.teamId]; if(c&&n-c<DONE_MS) out.push(x.id); });
+  return out.join();
+}
 function bannerHtml(){
   let h=''; const n=Date.now();
   activePings(me.teamId).forEach(p=>{
@@ -609,7 +617,7 @@ function bannerHtml(){
     const lab=pl=>p.type==='mult'?`${pl.x}× ${pl.min}m`:`+${pl.pts}`;
     const ladder=p.places.map((pl,i)=>byRank[i]!=null?`<span class="chip" style="text-decoration:line-through;opacity:.6">${ORD[i]} ${esc(team(byRank[i]).short)}</span>`:`<span class="chip pts">${ORD[i]} ${lab(pl)}</span>`).join('');
     const nowR=!mine&&pingReward(p,taken,me.teamId,n);
-    if(mine){ h+=`<div class="banner mult"><div class="row sp"><div><b>✅ Completed: ${esc(sp.name)}</b><div class="small">You got ${ORD[mine.rank]}: <b>${esc(mine.text)}</b></div></div><div style="text-align:right"><div class="small mut">ends in</div><div class="big" data-until="${p.deadline}">${mmss(p.deadline-n)}</div></div></div><div style="margin-top:6px">${ladder}</div></div>`; return; }
+    if(mine){ if(n-mine.ts<DONE_MS) h+=`<div class="banner mult"><div><b>✅ Completed: ${esc(sp.name)}</b><div class="small">You got ${ORD[mine.rank]}: <b>${esc(mine.text)}</b></div></div></div>`; return; }
     h+=`<div class="banner ping"><div class="row sp"><div><b>📍 Be at ${esc(sp.name)}</b><div class="small">${esc(p.msg||'Get your whole team there!')} Get within ${p.zone} yards.</div></div>
       <div class="big" data-until="${p.deadline}">${mmss(p.deadline-n)}</div></div>
       <div style="margin-top:6px">${ladder}</div>
@@ -618,11 +626,11 @@ function bannerHtml(){
       <div class="row sp" style="margin-top:6px">${mine?`<span class="chip ok">You got ${ORD[mine.rank]}: ${esc(mine.text)}</span>`:taken>=p.places.length?`<span class="chip neg">All places taken</span>`:`<button class="pri sm" data-act="checkin" data-id="${p.id}" ${S.gameOn?'':'disabled'}>I'm here</button>`}</div></div>`;
   });
   S.hunts.forEach(x=>{ if(!S.gameOn) return; const hp=S.huntPos[x.id], cl=x.claims&&x.claims[me.teamId];
-    if(cl){ if(x.state==='live'||n-cl<20*60000) h+=`<div class="banner mult"><div><b>✅ Found ${esc(x.leaderName)}</b><div class="small">${esc(hrew(x))} earned${x.state==='done'?'. Every team has found them.':''}</div></div></div>`; return; }
+    if(cl){ if(n-cl<DONE_MS) h+=`<div class="banner mult"><div><b>✅ Found ${esc(x.leaderName)}</b><div class="small">${esc(hrew(x))} earned</div></div></div>`; return; }
     if(x.state!=='live') return;
     h+=`<div class="banner ping"><div class="row sp"><div><b>🔍 Find ${esc(x.leaderName)}</b><div class="small">${hp?`Last seen ${ago(hp.ts)}, shown as a star on the Map tab`:'Waiting for their first location ping'}</div></div>
       ${hp?`<div style="text-align:right"><div class="small mut">next ping</div><div class="big" data-until="${hp.ts+30000}">${mmss(hp.ts+30000-n)}</div></div>`:''}</div>
-      <div class="row sp" style="margin-top:6px"><span class="chip pts">${hrew(x)}</span><button class="pri sm" data-act="hclaim" data-id="${x.id}">Enter code</button></div></div>`; });
+      <div class="row sp" style="margin-top:6px"><span class="chip pts">${hrew(x)}</span>${x.endsAt?`<span class="small mut">ends in <b data-until="${x.endsAt}">${mmss(x.endsAt-n)}</b></span>`:''}<button class="pri sm" data-act="hclaim" data-id="${x.id}">Enter code</button></div></div>`; });
   return h;
 }
 function flashCards(){
@@ -1088,6 +1096,7 @@ document.addEventListener('click',e=>{
   else if(a==='calopen'){ calib={busy:null,prog:0,msg:''}; calAdd={on:false,x:null,y:null,name:''}; renderCalib(); }
   else if(a==='calrec') recordSpot(id);
   else if(a==='sndtest') snd(v);
+  else if(a==='hplus'){ const x=S.hunts.find(q=>q.id===id); if(x){ if(x.state==='live'&&x.endsAt) x.endsAt+=300000; else if(x.state==='paused'&&x.remain!=null) x.remain+=300000; else if(x.state==='expired'){ x.remain=300000; x.expiredAt=0; goLive(x); } else if(x.state==='live'||x.state==='paused'){ x.len=0; } save(); } }
   else if(a==='calclear'){ S.calib={}; fitKey=''; save(); renderCalib(); }
   else if(a==='caladdon'){ calAdd={on:true,x:null,y:null,name:''}; calib.msg=''; renderCalib(true); }
   else if(a==='caladdoff'){ calAdd={on:false,x:null,y:null,name:''}; renderCalib(); }
@@ -1137,13 +1146,13 @@ document.addEventListener('click',e=>{
     if(!toks.length||toks.some(c=>c.length!==4)) return err('Every code must be exactly 4 digits. Tap Make list to fill them in.');
     if(new Set(toks).size!==toks.length) return err('The codes must all be different.');
     if(toks.length<S.teams.length) return err(`Add at least ${S.teams.length} codes, one for each team.`);
-    const inUse=new Set(); S.hunts.filter(x=>x.state!=='done').forEach(x=>x.codes.forEach(c=>inUse.add(c)));
+    const inUse=new Set(); S.hunts.filter(x=>!['done','expired'].includes(x.state)).forEach(x=>x.codes.forEach(c=>inUse.add(c)));
     const clash=toks.find(c=>inUse.has(c)); if(clash) return err(`${clash} is already used by another hunt.`);
-    S.hunts.push({id:uid(),leaderKey:L.key,leaderName:L.name,byName:me.name,codes:toks,ci:0,reward:hd.type==='points'?{type:'points',pts:Math.max(1,hd.pts)}:{type:'mult',x:hd.x,min:hd.min},state:'pending',rv:1,reqTs:Date.now(),announced:false,claims:{},tries:{}});
+    S.hunts.push({id:uid(),leaderKey:L.key,leaderName:L.name,byName:me.name,len:hd.len,codes:toks,ci:0,reward:hd.type==='points'?{type:'points',pts:Math.max(1,hd.pts)}:{type:'mult',x:hd.x,min:hd.min},state:'pending',rv:1,reqTs:Date.now(),announced:false,claims:{},tries:{}});
     ev(`${me.name} wants to start a hunt with you. Open the app and tap Okay.`,['key:'+L.key],{snd:'request'});
     hd.codes=''; save(); toast(`Request sent to ${L.name}. The hunt starts when they tap Okay.`);
   }
-  else if(a==='htoggle'){ const x=S.hunts.find(q=>q.id===id); if(x){ if(x.state==='live') x.state='paused'; else if(x.state==='paused') goLive(x); else if(x.state==='declined'){ x.state='pending'; x.rv++; x.reqTs=Date.now(); ev(`${me.name} is asking again about the hunt. Open the app and tap Okay.`,['key:'+x.leaderKey],{snd:'request'}); } save(); } }
+  else if(a==='htoggle'){ const x=S.hunts.find(q=>q.id===id); if(x){ if(x.state==='live'){ x.state='paused'; if(x.endsAt){ x.remain=Math.max(0,x.endsAt-Date.now()); x.endsAt=0; } } else if(x.state==='paused') goLive(x); else if(x.state==='expired'){ x.remain=(x.len||10)*60000; x.expiredAt=0; goLive(x); } else if(x.state==='declined'){ x.state='pending'; x.rv++; x.reqTs=Date.now(); ev(`${me.name} is asking again about the hunt. Open the app and tap Okay.`,['key:'+x.leaderKey],{snd:'request'}); } save(); } }
   else if(a==='hdel'){ S.hunts=S.hunts.filter(q=>q.id!==id); save(); }
   else if(a==='hokay'){ S=load()||S; const x=S.hunts.find(q=>q.id===id); closeModal(); if(x&&x.state==='pending'){ goLive(x); if(!shareOn) toggleShare(true); save(); toast('You are live. Kids can see your location every 30 seconds.'); } }
   else if(a==='hnotnow'){ S=load()||S; const x=S.hunts.find(q=>q.id===id); closeModal(); if(x&&x.state==='pending'){ x.state='declined'; ev(`${x.leaderName} is not ready for the hunt yet.`,['leader'],{}); save(); } }
@@ -1553,6 +1562,7 @@ function enterLeader(name,owner){
 }
 function goLive(h){
   const again=h.announced; h.state='live'; h.announced=true;
+  if(h.len||h.remain!=null){ h.endsAt=Date.now()+(h.remain!=null?h.remain:h.len*60000); h.remain=null; }
   if(!again) ev(`🔍 New hunt: find ${h.leaderName}! (${hrew(h)})`,['player','leader'],{snd:'hunt'});
   else ev(`🔍 The hunt for ${h.leaderName} is back on`,['player'],{});
 }
@@ -1605,7 +1615,7 @@ function claimHunt(teamId,id,code){
   if(h.reward.type==='points'){ const pts=Math.round(h.reward.pts*multFor(teamId)); S.bonus.push({teamId,pts,reason:'Found '+h.leaderName,ts:n}); msg=`Found ${h.leaderName}! +${pts}`; }
   else { const cur=S.mult.teams[teamId], live=cur&&cur.until>n; S.mult.teams[teamId]={x:Math.max(live?cur.x:1,h.reward.x),until:Math.max(live?cur.until:0,n+h.reward.min*60000)}; msg=`Found ${h.leaderName}! ${h.reward.x}× points for ${h.reward.min} min`; }
   ev(`🔍 ${team(teamId).short} found ${h.leaderName} (${hrew(h)})`,['all']);
-  if(h.ci>=h.codes.length||Object.keys(h.claims).length>=S.teams.length){ h.state='done'; ev(`Every team has found you. The hunt is over. Thank you!`,['key:'+h.leaderKey]); }
+  if(h.ci>=h.codes.length||Object.keys(h.claims).length>=S.teams.length){ h.state='done'; h.doneAt=n; ev(`Every team has found you. The hunt is over. Thank you!`,['key:'+h.leaderKey]); }
   else ev(`${team(teamId).short} found you. Your next code is ${hcode(h)}.`,['key:'+h.leaderKey],{snd:'ok'});
   save(); return {ok:true,msg};
 }
@@ -1617,13 +1627,14 @@ function openClaim(id){
    <div class="row" style="margin-top:10px"><button class="ghost grow" data-act="mclose">Cancel</button><button class="pri grow" data-act="hsubmit" data-id="${id}">Check code</button></div>`);
 }
 function leaderHuntCards(){
-  const mine=S.hunts.filter(h=>h.leaderKey===me.key&&['live','paused','done'].includes(h.state)); if(!mine.length) return '';
+  const nowT=Date.now(), mine=S.hunts.filter(h=>h.leaderKey===me.key&&(['live','paused'].includes(h.state)||(h.state==='done'&&nowT-(h.doneAt||0)<60000)||(h.state==='expired'&&nowT-(h.expiredAt||0)<60000))); if(!mine.length) return '';
   return mine.map(h=>{
     const pos=S.huntPos[h.id], sharing=!!S.locs[me.key], claims=Object.keys(h.claims||{}).length;
     if(h.state==='done') return `<div class="banner mult"><b>✅ Hunt finished.</b> <span class="small">All teams found you. Thank you!</span></div>`;
+    if(h.state==='expired') return `<div class="banner mult"><b>⏱ Hunt over.</b> <span class="small">Time ran out. Thank you!</span></div>`;
     return `<div class="banner ping"><div class="row sp"><div><b>🎯 You are being hunted</b><div class="small">${h.state==='live'?'Show this code only to a team standing in front of you.':'Paused by Josh.'}</div></div>
       <div class="big" style="letter-spacing:5px">${esc(hcode(h))}</div></div>
-      <div class="small" style="margin-top:6px">Code ${Math.min(h.ci+1,h.codes.length)} of ${h.codes.length} · Reward: ${hrew(h)} · ${claims} of ${S.teams.length} teams found you</div>
+      <div class="small" style="margin-top:6px">Code ${Math.min(h.ci+1,h.codes.length)} of ${h.codes.length} · Reward: ${hrew(h)} · ${claims} of ${S.teams.length} teams found you${h.state==='live'&&h.endsAt?` · ends in <b data-until="${h.endsAt}">${mmss(h.endsAt-Date.now())}</b>`:''}</div>
       <div class="small" style="margin-top:4px">${!sharing?'⚠ Turn on Share my location below so kids can find you.':pos?`Last ping went out ${ago(pos.ts)}. Next in <b data-until="${pos.ts+30000}">${mmss(pos.ts+30000-Date.now())}</b>.`:'Your first ping goes out in a moment.'}</div></div>`;
   }).join('');
 }
@@ -1634,14 +1645,20 @@ function ownerSummary(){
   const stat=(n,l,c)=>`<div class="card" style="margin:0;text-align:center;padding:10px"><div class="big" ${c?`style="color:${c}"`:''}>${n}</div><div class="small mut">${l}</div></div>`;
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0">${stat(pendingCount(),'waiting for judges',pendingCount()?'var(--warn)':'')}${stat(top.s+' pts','leading: '+esc(top.t.short))}${stat(sharing,'phones sharing location')}${stat(S.hunts.filter(h=>h.state==='live').length+' of '+S.hunts.length,'hunts live')}</div>`;
 }
-let hd={leader:'',codes:'',type:'points',pts:10,x:2,min:10};
+let hd={leader:'',codes:'',type:'points',pts:10,x:2,min:10,len:20};
+const HUNT_LENS=[[5,'5 minutes'],[10,'10 minutes'],[15,'15 minutes'],[20,'20 minutes'],[30,'30 minutes'],[45,'45 minutes'],[60,'1 hour'],[0,'No time limit']];
 function hdSync(){
   const g=id=>document.getElementById(id); if(!g('hn-leader')) return;
   hd.leader=g('hn-leader').value; hd.codes=g('hn-codes').value;
   if(g('hn-pts')) hd.pts=parseInt(g('hn-pts').value,10)||hd.pts;
-  if(g('hn-x')) hd.x=parseFloat(g('hn-x').value); if(g('hn-min')) hd.min=+g('hn-min').value;
+  if(g('hn-x')) hd.x=parseFloat(g('hn-x').value); if(g('hn-min')) hd.min=+g('hn-min').value; if(g('hn-len')) hd.len=+g('hn-len').value;
 }
-const STATE_CHIP={pending:['warn','⏳ Waiting for their Okay'],declined:['neg','Said not now'],live:['ok','Live'],paused:['','Paused'],done:['ok','Finished']};
+const STATE_CHIP={pending:['warn','⏳ Waiting for their Okay'],declined:['neg','Said not now'],live:['ok','Live'],paused:['','Paused'],done:['ok','Finished'],expired:['neg','⏱ Time ran out']};
+function expireHunts(){
+  if(!S.gameOn) return; const n=Date.now(); let ch=false;
+  S.hunts.forEach(h=>{ if(h.state==='live'&&h.endsAt&&h.endsAt<=n){ h.state='expired'; h.expiredAt=n; ch=true; ev(`⏱ Time is up on the hunt for ${h.leaderName}.`,['player','leader']); ev(`Your hunt is over. Thank you!`,['key:'+h.leaderKey]); } });
+  if(ch) save();
+}
 function huntsView(){
   const leaders=Object.values(S.leaders);
   let h=`<div class="card"><h3>New leader hunt</h3><div class="small mut">The leader gets a pop-up and a sound on their phone and must tap Okay before anything starts. Then kids see their location every 30 seconds. Each team that finds them gets the next code on your list.</div>
@@ -1653,17 +1670,19 @@ function huntsView(){
    ${hd.type==='points'?`<label>Points for each team that finds them</label><input id="hn-pts" type="number" min="1" value="${hd.pts}">`
    :`<div class="row"><div class="grow"><label>Times</label><select id="hn-x">${[2,2.5,3].map(x=>`<option ${hd.x===x?'selected':''}>${x}</option>`).join('')}</select></div></div>
      <label>How long: <b id="hn-ml">${hd.min}</b> min</label><input id="hn-min" type="range" min="2" max="15" step="1" value="${hd.min}" style="padding:0">`}
+   <label>How long the hunt lasts</label><select id="hn-len">${HUNT_LENS.map(l=>`<option value="${l[0]}" ${hd.len===l[0]?'selected':''}>${l[1]}</option>`).join('')}</select>
+   <div class="small mut" style="margin-top:4px">The clock starts when ${'the leader taps Okay'}. It ends early if every team finds them. You can add time later.</div>
    <div id="hn-err" class="small" style="color:var(--bad);margin-top:6px"></div>
    <button class="pri" style="width:100%;margin-top:10px" data-act="hcreate">Send request</button></div>`;
   if(S.hunts.length) h+=`<div class="row sp" style="margin-top:14px"><b>Hunts</b><span class="small mut">${S.hunts.filter(x=>x.state==='live').length} live</span></div>`;
   S.hunts.forEach(x=>{
     const pos=S.huntPos[x.id], sharing=!!S.locs[x.leaderKey], sc=STATE_CHIP[x.state]||['',x.state];
-    h+=`<div class="card"><div class="row sp"><div><b>${esc(x.leaderName)}</b> <span class="chip ${sc[0]}">${sc[1]}</span></div><div class="big" style="letter-spacing:4px">${x.state==='done'?'—':esc(hcode(x))}</div></div>
-     <div class="small mut">Reward: ${hrew(x)}</div>
+    h+=`<div class="card"><div class="row sp"><div><b>${esc(x.leaderName)}</b> <span class="chip ${sc[0]}">${sc[1]}</span></div><div class="big" style="letter-spacing:4px">${x.state==='done'||x.state==='expired'?'—':esc(hcode(x))}</div></div>
+     <div class="small mut">Reward: ${hrew(x)} · Time limit: ${x.len?x.len+' min':'none'}${x.state==='live'&&x.endsAt?` · <b data-until="${x.endsAt}">${mmss(x.endsAt-Date.now())}</b> left`:x.state==='paused'&&x.remain!=null?` · ${mmss(x.remain)} left (paused)`:''}</div>
      <div class="small" style="margin:4px 0">Codes: ${x.codes.map((c,i)=>`<span style="${i<x.ci?'text-decoration:line-through;opacity:.5':i===x.ci&&x.state!=='done'?'color:var(--accent);font-weight:700':''}">${esc(c)}</span>`).join(' · ')}</div>
      ${x.state==='live'?`<div class="small" style="margin:4px 0">${pos?`Last ping ${ago(pos.ts)}`:sharing?'Waiting for the first ping':'⚠ '+esc(x.leaderName)+' is not sharing location yet'}</div>`:''}
      <div>${S.teams.map(t=>`<span class="chip ${x.claims&&x.claims[t.id]?'ok':''}">${esc(t.short)} ${x.claims&&x.claims[t.id]?'✓':'…'}</span>`).join('')}</div>
-     <div class="row" style="margin-top:8px">${x.state==='live'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Pause</button>`:x.state==='paused'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Resume</button>`:x.state==='declined'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Ask again</button>`:''}<button class="sm bad" data-act="hdel" data-id="${x.id}">${x.state==='pending'?'Cancel':'Delete'}</button></div></div>`;
+     <div class="row" style="margin-top:8px">${x.state==='live'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Pause</button>`:x.state==='paused'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Resume</button>`:x.state==='declined'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Ask again</button>`:''}${x.state==='expired'?`<button class="sm grow" data-act="htoggle" data-id="${x.id}">Restart (${x.len||10} min)</button>`:''}${(x.state==='live'||x.state==='paused')&&x.len?`<button class="sm" data-act="hplus" data-id="${x.id}">+5 min</button>`:''}<button class="sm bad" data-act="hdel" data-id="${x.id}">${x.state==='pending'?'Cancel':'Delete'}</button></div></div>`;
   });
   return h;
 }
@@ -1714,13 +1733,13 @@ function toggleBots(){
 /* ================= TICK ================= */
 let lastKey='';
 function tick(force){
-  const n=Date.now(); if(outbox.length&&online()) flushOutbox(); publishHuntPings(); autoAcceptDemo(); checkPingBuzz(); maybeHuntPrompt(); ensurePlayerShare(); pingPrompt(); gameTick(); sosTick(); revAuto();
+  const n=Date.now(); if(outbox.length&&online()) flushOutbox(); publishHuntPings(); autoAcceptDemo(); expireHunts(); checkPingBuzz(); maybeHuntPrompt(); ensurePlayerShare(); pingPrompt(); gameTick(); sosTick(); revAuto();
   if(me&&me.role==='leader'&&S.help.some(h=>h.status==='open')&&n-sosPlayedAt>8000){ sosPlayedAt=n; snd('sos'); }
   const gc=$('#gclock'); if(gc) gc.textContent=clockText();
   document.querySelectorAll('[data-until]').forEach(el=>{ el.textContent=mmss(+el.dataset.until-n); });
   updateBoost();
   const g=S.mult.global;
-  const key=S.pings.filter(p=>p.deadline>n).map(p=>p.id).join()+'|'+(g&&g.until>n?g.x:0)+'|'+Object.entries(S.mult.teams).filter(([k,t])=>t.until>n).map(([k,t])=>k+t.x).join()+'|'+S.tasks.filter(x=>x.flash&&x.flash.deadline>n&&!x.off).map(x=>x.id).join()+'|'+S.game.state+'|'+S.help.map(h=>h.id+h.status).join();
+  const key=S.pings.filter(p=>p.deadline>n).map(p=>p.id).join()+'|'+(g&&g.until>n?g.x:0)+'|'+Object.entries(S.mult.teams).filter(([k,t])=>t.until>n).map(([k,t])=>k+t.x).join()+'|'+S.tasks.filter(x=>x.flash&&x.flash.deadline>n&&!x.off).map(x=>x.id).join()+'|'+S.game.state+'|'+S.help.map(h=>h.id+h.status).join()+'|'+freshDone()+'|'+S.hunts.map(h=>h.id+h.state).join();
   if(!force && key!==lastKey){ lastKey=key; render(); } else lastKey=key;
 }
 setInterval(()=>tick(false),1000);
