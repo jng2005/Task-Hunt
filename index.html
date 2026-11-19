@@ -128,8 +128,8 @@ button.boostbar{position:sticky;top:6px;z-index:30;width:100%;display:flex;justi
 <script>
 "use strict";
 /* ================= CONFIG / SEED ================= */
-const DEMO = true;
-const PINS = {owner:'1111', leader:'3333', judge:'2222'};          // prototype only: real app must check on a server
+const DEMO = /demo/.test(location.hash);   // shortcuts and demo tools only when the URL ends in #demo
+const PINS = {owner:'7603', leader:'1232', judge:'6842'};          // prototype only: real app must check on a server
 const KEY = 'taskhunt_proto_v1';
 
 const TEAM_DEFS = [
@@ -487,11 +487,11 @@ function joinView(){
    <div class="seg">${['player','leader','judge'].map(r=>`<button class="${joinRole===r?'on':''}" data-act="jrole" data-v="${r}">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}</div>
    <label>Your name</label><input id="j-name" maxlength="20" placeholder="First name">
    ${joinRole==='player'?`<label>Team</label><select id="j-team">${S.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>`
-     :`<label>Access code</label><input id="j-pin" inputmode="numeric" autocomplete="off" placeholder="Code from Josh"><div class="small mut" style="margin-top:4px">Demo codes: owner 1111, other leaders 3333, judge 2222</div>`}
+     :`<label>Access code</label><input id="j-pin" inputmode="numeric" autocomplete="off" placeholder="Code from Josh">`}
    <div id="j-err" class="small" style="color:var(--bad);margin-top:6px"></div>
    <button class="pri" style="width:100%;margin-top:10px" data-act="join">Join</button></div>
-  <div class="card"><h3>Quick demo</h3><div class="mut small" style="margin-bottom:8px">Jump straight in as each role.</div>
-   <div class="row" style="flex-wrap:wrap"><button data-act="quick" data-v="player">Player (Team 1)</button><button data-act="quick" data-v="owner">Owner (Josh)</button><button data-act="quick" data-v="leader">Leader (Maya)</button><button data-act="quick" data-v="judge">Judge</button></div></div>`;
+  ${DEMO?`<div class="card"><h3>Quick demo</h3><div class="mut small" style="margin-bottom:8px">Jump straight in as each role.</div>
+   <div class="row" style="flex-wrap:wrap"><button data-act="quick" data-v="player">Player (Team 1)</button><button data-act="quick" data-v="owner">Owner (Josh)</button><button data-act="quick" data-v="leader">Leader (Maya)</button><button data-act="quick" data-v="judge">Judge</button></div></div>`:''}`;
 }
 
 function rewardTxt(r){ return r.type==='mult' ? `${r.x}× for ${r.min} min` : `+${r.pts} pts`; }
@@ -996,7 +996,7 @@ document.addEventListener('click',e=>{
   else if(a==='seg'){ seg=v; render(); }
   else if(a==='jrole'){ joinRole=v; render(); }
   else if(a==='switch'){ openModal(`<h3 style="margin:0 0 8px">Switch role</h3><div class="mut small" style="margin-bottom:10px">Prototype shortcut. Real app: each person logs in once.</div>
-     <div class="row" style="flex-wrap:wrap"><button data-act="quick" data-v="player">Player</button><button data-act="quick" data-v="owner">Owner (Josh)</button><button data-act="quick" data-v="leader">Leader (Maya)</button><button data-act="quick" data-v="judge">Judge</button><button data-act="setup">Phone setup</button><button class="ghost" data-act="leave">Sign out</button></div>
+     <div class="row" style="flex-wrap:wrap">${DEMO?`<button data-act="quick" data-v="player">Player</button><button data-act="quick" data-v="owner">Owner (Josh)</button><button data-act="quick" data-v="leader">Leader (Maya)</button><button data-act="quick" data-v="judge">Judge</button>`:''}<button data-act="setup">Phone setup</button><button class="ghost" data-act="leave">Sign out</button></div>
      <button class="ghost" style="width:100%;margin-top:12px" data-act="mclose">Close</button>`); }
   else if(a==='leave'){ closeModal(); me=null; try{sessionStorage.removeItem('th_me'); localStorage.removeItem('th_me_backup');}catch(x){} render(); }
   else if(a==='join'){
