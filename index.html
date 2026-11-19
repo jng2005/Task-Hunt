@@ -440,19 +440,21 @@ function toggleShare(on){
 }
 
 /* ================= VIEWS ================= */
+let lastNorm='', lastTab='', lastMe='', userActAt=0;
+function mediaBusy(){ if(Date.now()-userActAt<500) return false; return [...document.querySelectorAll('#app video,#app audio')].some(m=>!m.paused&&!m.ended); }
 function render(){
-  if(isEditing()){ dirty=true; return; }
+  if(isEditing()||mediaBusy()){ dirty=true; return; }
   dirty=false;
   document.body.classList.toggle('easy',!!me&&(me.role==='judge'||(me.role==='leader'&&!me.owner)));
   const app=$('#app');
-  if(!me){ app.innerHTML=joinView(); return; }
+  if(!me){ lastNorm=""; app.innerHTML=joinView(); return; }
   const tabs=navFor(me.role); if(!tab||!tabs.find(t=>t[0]===tab)) tab=tabs[0][0];
   let body='';
   if(me.role==='player'){ body = tab==='hunt'?huntView(): tab==='map'?playerMap(): scoresView(); }
   if(me.role==='judge'){ body = tab==='queue'?queueView(): scoresView(); }
   if(me.role==='leader'){ body = tab==='map'?leaderMap(): tab==='pings'?pingsView(): tab==='hunts'?huntsView(): tab==='boosts'?boostsView(): tab==='tasks'?tasksView(): scoresView(); }
   const t=me.teamId?team(me.teamId):null;
-  app.innerHTML=`<header class="top"><div><h1>Task Hunt</h1><small>Tahoe 2027 · <b id="gclock">${clockText()}</b></small></div>
+  const html=`<header class="top"><div><h1>Task Hunt</h1><small>Tahoe 2027 · <b id="gclock">${clockText()}</b></small></div>
     <button class="pill" data-act="switch">${t?`<span class="dot" style="background:${t.color}"></span>${esc(t.short)} · `:''}${esc(me.role)} · ${esc(me.name)} ▾</button></header>
     ${!online()?`<div class="banner info"><b>\ud83d\udcf6 No signal.</b> <span class="mut">Proof is saved on your phone and sends when you're back online${outbox.length?' ('+outbox.length+' waiting)':''}.</span></div>`:''}
     ${(!S.gameOn)?`<div class="banner info"><b>${S.game.state==='idle'?'Task Hunt has not started yet.':S.game.state==='ended'?'Time is up. Task Hunt is over.':'Task Hunt is paused.'}</b> <span class="mut">${S.game.state==='ended'?'Judges can still finish reviewing proof.':'Submissions and location sharing are off until the game is running.'}</span></div>`:''}
@@ -461,6 +463,9 @@ function render(){
     <nav class="bar"><div class="in">${tabs.map(t=>`<button class="${t[0]===tab?'on':''}" data-act="tab" data-v="${t[0]}"><b>${t[1]}</b>${t[2]}${t[0]==='queue'&&pendingCount()?`<span class="badge">${pendingCount()}</span>`:''}</button>`).join('')}</div></nav>
     ${me.role==='player'?'<button class="sosbtn" data-act="sos" aria-label="Ask a leader for help">!</button>':''}
     ${DEMO?`<div class="demo"><button class="pill" data-act="demo">⚙ Demo tools</button></div>`:''}`;
+  // Skip the redraw when nothing visible changed (GPS pings re-save constantly). Rebuilding the page restarts videos and makes the screen flash.
+  const norm=html.replace(/<b id="gclock">[^<]*<\/b>/,''), sig=(me&&me.key)+'|'+tab;
+  if(norm!==lastNorm||sig!==lastTab){ app.innerHTML=html; lastNorm=norm; lastTab=sig; }
   drawReveal();
   if(fsOpen) fsDraw();
   tick(true);
@@ -476,6 +481,7 @@ function isEditing(){
   if($('#modal').classList.contains('on')) return false;
   return !!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && $('#app').contains(a) && a.type!=='checkbox');
 }
+['pause','ended'].forEach(ev=>document.addEventListener(ev,()=>{ setTimeout(()=>{ if(dirty && !isEditing() && !mediaBusy()) render(); },200); },true));
 document.addEventListener('focusout',()=>{ setTimeout(()=>{ if(dirty && !isEditing()) render(); },150); });
 
 let joinRole='player', badTries=0, joinLock=0;
@@ -982,6 +988,7 @@ function checkin(id){
 }
 
 document.addEventListener('click',e=>{
+  userActAt=Date.now();
   if(Date.now()-suppressClick<300 && e.target.closest('#fsstage')) return;
   const mp=e.target.closest('svg.map');
   if(mp && mp.dataset.place==='1' && !e.target.closest('[data-act]')){
