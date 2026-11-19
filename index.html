@@ -1521,7 +1521,7 @@ function openSos(){
 }
 function renderSos(){
   const left=Math.max(0,Math.ceil((sos.t0+10000-Date.now())/1000));
-  openModal(`<h3 style="margin:0 0 6px">🆘 Need a leader?</h3><div class="mut">This alerts every leader with your name and where you are. If it is a real emergency, call 911.</div>
+  openModal(`<h3 style="margin:0 0 6px">🆘 Need a leader?</h3><div class="mut">This alerts every leader with your name and where you are, and a leader will come to you.</div>
    <div class="big" id="sos-cd" style="text-align:center;margin:14px 0">${left>0?left:'Ready'}</div>
    <div class="small mut" id="sos-note" style="text-align:center">${left>0?'The send button unlocks when the countdown ends, so this is never sent by accident.':'Tap the red button to send.'}</div>
    <div class="row" style="margin-top:14px"><button class="grow" data-act="mclose">Cancel</button><button class="grow" id="sos-go" data-act="sossend" ${left>0?'disabled':''} style="background:#c0392b;color:#fff;border-color:#c0392b;font-weight:700">Send help alert</button></div>`);
@@ -1544,7 +1544,7 @@ async function sendHelp(){
 }
 function helpStatusBar(){
   const h=S.help.filter(x=>x.key===me.key&&x.status!=='done').pop(); if(!h) return '';
-  return `<div class="banner sos"><b>🆘 Help alert sent</b> <span class="small">${ago(h.ts)}</span><div class="small">${h.status==='ack'?`<b>${esc(h.ackBy)}</b> is on the way. Stay where you are if you can.`:'Leaders have been notified. Stay where you are if you can.'}</div>
+  return `<div class="banner sos"><b>🆘 Help alert sent</b> <span class="small">${ago(h.ts)}</span><div class="small">${h.status==='ack'?`<b>${esc(h.ackBy)}</b> is on the way. Stay where you are if you can.`:'A leader is coming. Stay where you are if you can.'}</div>
    <div style="margin-top:6px"><button class="sm" data-act="helpdone" data-id="${h.id}">I'm OK now</button></div></div>`;
 }
 function helpBar(){
