@@ -65,12 +65,25 @@ svg.map{width:100%;height:auto;background:#0f2238;border-radius:14px;border:1px 
 @keyframes pulse{0%{r:12;opacity:.9}100%{r:42;opacity:0}}
 .pulse{animation:pulse 1.6s infinite;fill:none;stroke:var(--warn);stroke-width:2}
 hr{border:0;border-top:1px solid var(--line);margin:10px 0}
-.sw{position:relative;display:inline-block;width:44px;height:26px}
-.sw input{opacity:0;width:0;height:0}
+.sw{position:relative;display:inline-block;flex:0 0 46px;width:46px;min-width:46px;height:28px;margin:0}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;padding:0;border:0;left:0;top:0;z-index:2;cursor:pointer}
 .sw span{position:absolute;inset:0;background:#0d1c2f;border:1px solid var(--line);border-radius:99px;transition:.15s}
-.sw span:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:var(--mut);border-radius:50%;transition:.15s}
+.sw span:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:var(--mut);border-radius:50%;transition:.15s}
 .sw input:checked+span{background:var(--ok);border-color:var(--ok)}
 .sw input:checked+span:before{transform:translateX(18px);background:#06331c}
+.calmap{width:100%;display:block;border-radius:12px;background:#0d1c2f;touch-action:manipulation}
+.cgrp{margin:14px 0 4px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.cnum{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#233f60;color:#fff;font-size:12px;font-weight:700;flex:0 0 24px}
+.chip.warn{background:#3a2a05;color:var(--warn);border-color:var(--warn)}
+.chip.badc{background:#3a1010;color:var(--bad);border-color:var(--bad)}
+header.top h1{white-space:nowrap}
+header.top small{white-space:nowrap;display:block}
+.pill{white-space:nowrap;min-height:34px;max-width:62vw;overflow:hidden;text-overflow:ellipsis}
+body.easy .top .pill{font-size:14px;padding:6px 12px;min-height:40px}
+button[data-act^=g]{white-space:nowrap}
+.row>button.grow{min-width:0;padding-left:8px;padding-right:8px}
+.sosbtn{width:48px;height:48px;font-size:24px;opacity:.92}
+main,#app{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 body.easy{font-size:18px}
 body.easy button,body.easy .btn{padding:13px 16px;font-size:17px}
 body.easy button.sm{padding:10px 14px;font-size:15px}
@@ -149,6 +162,16 @@ const SPOTS = [
   {id:'dock',   name:'Dock',         x:392,y:281},
   {id:'office', name:'Main Office',  x:580,y:423}
 ];
+/* Extra reference points on the roads and paths. Positions come from the property map; they are only used to line the map up with GPS. */
+const CALX = [
+  {id:'x_grand', name:'Grand Entry loop (north tip of road)', x:631,y:167},
+  {id:'x_oneway',name:'One Way Road bend (by Coffee Cabin)',  x:253,y:459},
+  {id:'x_summit',name:'Summit Lodge (trail hub)',             x:440,y:540},
+  {id:'x_west',  name:'West end of the road (by Leader Lobby)',x:60,y:614},
+  {id:'x_south', name:'South road (middle)',                  x:335,y:643},
+  {id:'x_prog',  name:'Program Office (south-east)',          x:593,y:636}
+];
+const calPts=()=>[...SPOTS,...CALX,...((S&&S.cpts)||[])];
 /* Placeholder GPS box (center is an unverified guess near Zephyr Cove). Real build: set from on-site calibration. */
 const BOUNDS = {lat:[39.00724,39.01276], lng:[-119.9457,-119.9383]};
 
@@ -221,7 +244,7 @@ function norm(o){ if(!o) return o; o.leaders=o.leaders||{}; o.hunts=o.hunts||[];
   o.pings.forEach(p=>{ if(!p.places){ p.type='points'; p.places=[{pts:p.bonus||10},{pts:Math.max(1,Math.round((p.bonus||10)/2))}]; }
     if(p.zone==null) p.zone=10; p.decay=p.decay||0; p.checkins=p.checkins||{};
     Object.keys(p.checkins).forEach((k,i)=>{ if(typeof p.checkins[k]==='number') p.checkins[k]={ts:p.checkins[k],rank:i,text:''}; }); });
-  o.tiers=o.tiers||{2:15,3:35}; o.tierTeam=o.tierTeam||{}; o.tierAt=o.tierAt||{}; o.help=o.help||[]; o.calib=o.calib||{}; o.reveal=o.reveal||null;
+  o.tiers=o.tiers||{2:15,3:35}; o.tierTeam=o.tierTeam||{}; o.tierAt=o.tierAt||{}; o.help=o.help||[]; o.calib=o.calib||{}; o.cpts=o.cpts||[]; o.reveal=o.reveal||null;
   if(!o.game) o.game={state:o.gameOn?'running':'idle',dur:90*60000,startedAt:Date.now(),endsAt:o.gameOn?Date.now()+90*60000:0,remain:0};
   (o.tasks||[]).forEach(t=>{ if(t.tier==null && !t.flash){ t.tier = t.type==='challenge' ? (CH_TIER[(parseInt(String(t.id).slice(1),10)||1)-1]||1) : (t.pts>=4?3:t.pts>=3?2:1); } });
   return o; }
@@ -349,6 +372,7 @@ function mapSVG(o){
     if(o.names) s+=`<text x="${l.x}" y="${l.y+24*k}" fill="#fff" font-size="${14*k}" text-anchor="middle" ${halo(4)}>${esc(l.name)}</text>`;
     s+=`</g>`;
   });
+  if(me&&me.owner) s+=traceSvg(k);
   if(me&&me.role==='leader') openHelp().forEach(h=>{ if(h.x==null) return; s+=`<g><circle class="pulse" cx="${h.x}" cy="${h.y}" r="12" style="stroke:#ff4d4d"/><circle cx="${h.x}" cy="${h.y}" r="${13*k}" fill="#ff4d4d" stroke="#fff" stroke-width="${3*k}"/><text x="${h.x}" y="${h.y-20*k}" font-size="${17*k}" font-weight="700" fill="#fff" text-anchor="middle" ${halo(5)}>🆘 ${esc(h.name)}</text></g>`; });
   s+=`</svg>`;
   return o.fs ? s : `<div class="mapwrap">${s}<button class="fsbtn" data-act="mapfs">⛶ Full screen map</button></div>`;
@@ -380,7 +404,7 @@ function fsZoom(f,cx,cy){
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&fsOpen) closeFs(); });
 let fitCache=null, fitKey='';
 function getFit(){
-  const pts=SPOTS.filter(sp=>S.calib&&S.calib[sp.id]); const key=pts.map(sp=>sp.id+S.calib[sp.id].ts).join();
+  const pts=calPts().filter(sp=>S.calib&&S.calib[sp.id]); const key=pts.map(sp=>sp.id+S.calib[sp.id].ts).join();
   if(key===fitKey) return fitCache; fitKey=key; fitCache=null; if(pts.length<2) return null;
   const lat0=pts.reduce((a,sp)=>a+S.calib[sp.id].lat,0)/pts.length, lng0=pts.reduce((a,sp)=>a+S.calib[sp.id].lng,0)/pts.length, cl=Math.cos(lat0*Math.PI/180);
   const U=pts.map(sp=>{ const c=S.calib[sp.id]; return {e:(c.lng-lng0)*cl*111320, n:(c.lat-lat0)*110574, x:sp.x, y:sp.y}; });
@@ -391,11 +415,17 @@ function getFit(){
   const ar=num_r/den, ai=num_i/den;
   fitCache={lat0,lng0,cl,ar,ai,br:xc-(ar*ec+ai*nc),bi:yc-(-ar*nc+ai*ec)}; return fitCache;
 }
-function geoToXY(lat,lng){
-  const f=getFit(); let x,y;
-  if(f){ const e=(lng-f.lng0)*f.cl*111320, n=(lat-f.lat0)*110574; x=f.ar*e+f.ai*n+f.br; y=-f.ar*n+f.ai*e+f.bi; }
-  else { x=(lng-BOUNDS.lng[0])/(BOUNDS.lng[1]-BOUNDS.lng[0])*MW; y=(1-(lat-BOUNDS.lat[0])/(BOUNDS.lat[1]-BOUNDS.lat[0]))*MH; }
-  return {x:Math.max(0,Math.min(MW,x)),y:Math.max(0,Math.min(MH,y))};
+function rawXY(lat,lng){
+  const f=getFit();
+  if(f){ const e=(lng-f.lng0)*f.cl*111320, n=(lat-f.lat0)*110574; return {x:f.ar*e+f.ai*n+f.br, y:-f.ar*n+f.ai*e+f.bi}; }
+  return {x:(lng-BOUNDS.lng[0])/(BOUNDS.lng[1]-BOUNDS.lng[0])*MW, y:(1-(lat-BOUNDS.lat[0])/(BOUNDS.lat[1]-BOUNDS.lat[0]))*MH};
+}
+function geoToXY(lat,lng){ const q=rawXY(lat,lng); return {x:Math.max(0,Math.min(MW,q.x)),y:Math.max(0,Math.min(MH,q.y))}; }
+function fitStats(){
+  const pts=calPts().filter(p=>S.calib[p.id]); if(pts.length<2||!getFit()) return null;
+  const rows=pts.map(p=>{ const c=S.calib[p.id], q=rawXY(c.lat,c.lng); return {p,res:Math.hypot(q.x-p.x,q.y-p.y)}; });
+  const rms=Math.sqrt(rows.reduce((a,r)=>a+r.res*r.res,0)/rows.length);
+  return {rows,rms,n:pts.length,worst:rows.reduce((a,r)=>r.res>a.res?r:a),byId:Object.fromEntries(rows.map(r=>[r.p.id,r.res]))};
 }
 let watchId=null, pollId=null, shareOn=false, shareNote='', shareTried=false;
 function setLoc(x,y,acc,lat,lng){
@@ -990,6 +1020,8 @@ function checkin(id){
 document.addEventListener('click',e=>{
   userActAt=Date.now();
   if(Date.now()-suppressClick<300 && e.target.closest('#fsstage')) return;
+  const cm=e.target.closest('svg.calmap');
+  if(cm&&calAdd.on){ const ni=$('#cal-name'); if(ni) calAdd.name=ni.value; const pt=cm.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const q=pt.matrixTransform(cm.getScreenCTM().inverse()); calAdd.x=Math.max(0,Math.min(MW,q.x)); calAdd.y=Math.max(0,Math.min(MH,q.y)); renderCalib(); return; }
   const mp=e.target.closest('svg.map');
   if(mp && mp.dataset.place==='1' && !e.target.closest('[data-act]')){
     const pt=mp.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const q=pt.matrixTransform(mp.getScreenCTM().inverse()); setLoc(Math.max(0,Math.min(MW,q.x)),Math.max(0,Math.min(MH,q.y))); return;
@@ -1051,9 +1083,16 @@ document.addEventListener('click',e=>{
   else if(a==='gresume') resumeGame();
   else if(a==='gextend') extendGame(+v);
   else if(a==='gend'){ if(Date.now()<endArm){ endArm=0; endGame(); } else { endArm=Date.now()+4000; render(); setTimeout(render,4100); } }
-  else if(a==='calopen'){ calib={busy:null,prog:0,msg:''}; renderCalib(); }
+  else if(a==='calopen'){ calib={busy:null,prog:0,msg:''}; calAdd={on:false,x:null,y:null,name:''}; renderCalib(); }
   else if(a==='calrec') recordSpot(id);
   else if(a==='calclear'){ S.calib={}; fitKey=''; save(); renderCalib(); }
+  else if(a==='caladdon'){ calAdd={on:true,x:null,y:null,name:''}; renderCalib(); }
+  else if(a==='caladdoff'){ calAdd={on:false,x:null,y:null,name:''}; renderCalib(); }
+  else if(a==='calsave'){ const nm=(($('#cal-name')||{}).value||calAdd.name||'').trim()||('Point '+(S.cpts.length+1)); if(calAdd.x==null) return; S.cpts.push({id:'u'+uid(),name:nm.slice(0,30),x:Math.round(calAdd.x),y:Math.round(calAdd.y)}); calAdd={on:false,x:null,y:null,name:''}; fitKey=''; save(); renderCalib(); }
+  else if(a==='caldel'){ S.cpts=S.cpts.filter(p=>p.id!==id); delete S.calib[id]; fitKey=''; save(); renderCalib(); }
+  else if(a==='trstart') startTrace();
+  else if(a==='trstop') stopTrace();
+  else if(a==='trclear'){ TR.pts=[]; TR.last=null; TR.bad=0; saveTrace(); renderCalib(); render(); }
   else if(a==='sos') openSos();
   else if(a==='sossend') sendHelp();
   else if(a==='helpack'){ const h=S.help.find(x=>x.id===id); if(h){ h.status='ack'; h.ackBy=me.name; ev(`${me.name} is on the way to ${h.name}`,['leader'],{toast:false}); save(); } }
@@ -1345,18 +1384,85 @@ function helpBar(){
 /* ================= CALIBRATION ================= */
 let calib={busy:null,prog:0,msg:''};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const trKey='taskhunt_trace';
+let TR={on:false,pts:[],bad:0,last:null,wl:null,err:''}, traceWatch=null, calAdd={on:false,x:null,y:null,name:''};
+try{ const t=JSON.parse(localStorage.getItem(trKey)||'null'); if(t&&t.pts) TR.pts=t.pts; }catch(e){}
+const saveTrace=()=>{ try{ localStorage.setItem(trKey,JSON.stringify({pts:TR.pts})); }catch(e){} };
+function traceYd(){ let d=0; for(let i=1;i<TR.pts.length;i++) d+=haversine(TR.pts[i-1][0],TR.pts[i-1][1],TR.pts[i][0],TR.pts[i][1]); return Math.round(d*1.09361); }
+function traceStatText(){ const l=TR.last; return `${TR.pts.length} points · ${traceYd()} yd walked${l?` · GPS ±${Math.round(l.acc)} m`:TR.on?' · waiting for GPS…':''}${TR.bad?` · ${TR.bad} weak readings skipped`:''}`; }
+function traceSvg(k){
+  if(!TR.pts.length&&!TR.last) return '';
+  let o='';
+  if(TR.pts.length>1) o+=`<polyline class="trline" points="${TR.pts.map(p=>{ const q=rawXY(p[0],p[1]); return q.x.toFixed(1)+','+q.y.toFixed(1); }).join(' ')}" fill="none" stroke="#ffd24d" stroke-width="${3*k}" stroke-linejoin="round" stroke-linecap="round" opacity=".95"/>`;
+  if(TR.on&&TR.last){ const q=rawXY(TR.last.lat,TR.last.lng); o+=`<circle class="trme" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${9*k}" fill="#ffd24d" stroke="#fff" stroke-width="${3*k}"/>`; }
+  return o;
+}
+function updateTraceUI(){
+  document.querySelectorAll('.trstat').forEach(el=>{ el.textContent=traceStatText(); });
+  document.querySelectorAll('svg').forEach(sv=>{
+    const kk=sv.classList.contains('calmap')?1.6:Math.max(.35,(sv.viewBox.baseVal.width||MW)/MW);
+    sv.querySelectorAll('.trline,.trme').forEach(n=>n.remove());
+    if(sv.classList.contains('calmap')||sv.classList.contains('map')){ if(sv.classList.contains('map')&&!(me&&me.owner)) return; sv.insertAdjacentHTML('beforeend',traceSvg(kk)); }
+  });
+}
+function onTrace(p){
+  const c=p.coords; TR.last={lat:c.latitude,lng:c.longitude,acc:c.accuracy,ts:Date.now()};
+  if(c.accuracy>35) TR.bad++;
+  else { const L=TR.pts[TR.pts.length-1]; if(!L||haversine(L[0],L[1],c.latitude,c.longitude)>=3){ TR.pts.push([c.latitude,c.longitude,Math.round(c.accuracy),Date.now()]); if(TR.pts.length>2500) TR.pts=TR.pts.filter((_,i)=>i%2===0); saveTrace(); } }
+  updateTraceUI();
+}
+function startTrace(){
+  if(!navigator.geolocation){ calib.msg='GPS is not available in this browser.'; renderCalib(); return; }
+  if(TR.on) return; TR.on=true; TR.bad=0; TR.err='';
+  traceWatch=navigator.geolocation.watchPosition(onTrace,e=>{ if(e&&e.code===1){ calib.msg='Location permission is off. Allow precise location for this site, then start again.'; stopTrace(); } else { TR.bad++; updateTraceUI(); } },{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  try{ if(navigator.wakeLock) navigator.wakeLock.request('screen').then(w=>{ TR.wl=w; }).catch(()=>{}); }catch(e){}
+  if($('#modal').classList.contains('on')) renderCalib(); render();
+}
+function stopTrace(){
+  TR.on=false; if(traceWatch!=null){ try{ navigator.geolocation.clearWatch(traceWatch); }catch(e){} traceWatch=null; }
+  try{ if(TR.wl){ TR.wl.release(); TR.wl=null; } }catch(e){}
+  if($('#modal').classList.contains('on')) renderCalib(); render();
+}
 function calibCard(){
-  const n=SPOTS.filter(sp=>S.calib[sp.id]).length;
-  return `<div class="card"><div class="row sp"><div><b>Calibrate spots</b><div class="small mut">Do this at camp the day before. ${n} of ${SPOTS.length} recorded${n>=2?' · map aligned':''}.</div></div><button class="pri sm" data-act="calopen">Calibrate</button></div></div>`;
+  const all=calPts(), n=all.filter(p=>S.calib[p.id]).length, st=fitStats();
+  const q=st?(st.rms<=12?'good':st.rms<=25?'ok':'off'):'';
+  return `<div class="card"><div class="row sp"><div><b>Calibrate and check the map</b><div class="small mut">Do this at camp the day before. ${n} of ${all.length} points recorded${st?` · average error ${Math.round(st.rms)} yd`:''}.</div></div><button class="pri sm" data-act="calopen">Open</button></div>
+   ${TR.on?`<div class="row sp" style="margin-top:8px"><span class="chip ok">● Tracing your walk</span><button class="sm bad" data-act="trstop">Stop</button></div><div class="small mut trstat" style="margin-top:4px">${esc(traceStatText())}</div>`:(TR.pts.length?`<div class="small mut" style="margin-top:6px">Last walk: ${TR.pts.length} points, ${traceYd()} yd (yellow line on the map).</div>`:'')}</div>`;
+}
+function calMapSvg(st){
+  const all=calPts(); let m=`<svg class="calmap" viewBox="0 0 ${MW} ${MH}"><use href="#campmap"/>`;
+  all.forEach((p,i)=>{
+    const rec=S.calib[p.id], res=st&&st.byId[p.id], col=!rec?'#5b7fa6':res==null||res<=12?'#43d68a':res<=25?'#ffc857':'#ff6b6b';
+    m+=`<g><circle cx="${p.x}" cy="${p.y}" r="14" fill="${col}" stroke="#fff" stroke-width="3"/><text x="${p.x}" y="${p.y+6}" font-size="17" font-weight="800" text-anchor="middle" fill="#04121f">${i+1}</text></g>`;
+  });
+  if(calAdd.on&&calAdd.x!=null) m+=`<circle cx="${calAdd.x}" cy="${calAdd.y}" r="14" fill="none" stroke="#ff9d00" stroke-width="4"/><circle cx="${calAdd.x}" cy="${calAdd.y}" r="4" fill="#ff9d00"/>`;
+  m+=traceSvg(1.6);
+  return m+`</svg>`;
+}
+function calRow(p,i,st){
+  const c=S.calib[p.id], busy=calib.busy===p.id, res=st&&st.byId[p.id];
+  const chip=res==null?'':res<=12?`<span class="chip ok">Good · ${Math.round(res)} yd off</span>`:res<=25?`<span class="chip warn">OK · ${Math.round(res)} yd off</span>`:`<span class="chip badc">Check · ${Math.round(res)} yd off</span>`;
+  return `<div class="card" style="margin:6px 0;padding:10px"><div class="row" style="align-items:flex-start;gap:10px"><span class="cnum">${i+1}</span>
+   <div class="grow" style="min-width:0"><b>${esc(p.name)}</b><div class="small ${c?'':'mut'}">${busy?`Reading GPS… ${calib.prog} of 5`:c?`Recorded ${ago(c.ts)} · ±${Math.round(c.acc)} m${c.acc>20?' · weak GPS, try again in the open':''}`:'Not recorded yet'}</div>${chip?`<div style="margin-top:4px">${chip}</div>`:''}</div>
+   <div style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto"><button class="${c?'':'pri'} sm" data-act="calrec" data-id="${p.id}" ${calib.busy?'disabled':''}>${c?'Re-record':'Record here'}</button>${p.custom?`<button class="sm bad" data-act="caldel" data-id="${p.id}">Remove</button>`:''}</div></div></div>`;
 }
 function renderCalib(){
-  const f=SPOTS.filter(sp=>S.calib[sp.id]).length;
-  openModal(`<h3 style="margin:0 0 4px">Calibrate spots</h3><div class="mut small" style="margin-bottom:8px">Stand at the middle of each spot, hold the phone still, and tap Record. It averages 5 GPS readings. These real positions make the zone, arrow and distances accurate.</div>
-   <div class="banner info small">${f>=2?`Map aligned using ${f} spots${f<3?'. Record a third for better accuracy.':'.'}`:'Record at least 2 spots to line the map up with real GPS. 3 or more is better.'}</div>
-   ${SPOTS.map(sp=>{ const c=S.calib[sp.id], busy=calib.busy===sp.id; return `<div class="card" style="margin:8px 0"><div class="row sp"><div><b>${esc(sp.name)}</b><div class="small ${c?'':'mut'}">${busy?`Reading GPS… ${calib.prog} of 5`:c?`Recorded ${ago(c.ts)} · ±${Math.round(c.acc)} m${c.acc>20?' · weak GPS, try again in the open':''}`:'Not recorded yet'}</div></div>
-     <button class="${c?'':'pri'} sm" data-act="calrec" data-id="${sp.id}" ${calib.busy?'disabled':''}>${c?'Re-record':'Record here'}</button></div></div>`; }).join('')}
+  const all=calPts(), st=fitStats(), nrec=all.filter(p=>S.calib[p.id]).length;
+  const sum = !st ? `<div class="banner info small">Record at least 2 points to line the map up with real GPS. 4 or more spread around the property is best.</div>`
+    : `<div class="banner info small"><b>Map fit: ${st.rms<=12?'good':st.rms<=25?'okay':'needs work'}.</b> Average error ${Math.round(st.rms)} yd across ${st.n} points${st.n<=2?'. With only 2 points the fit cannot be checked, so record a third.':`; worst is ${esc(st.worst.p.name)} at ${Math.round(st.worst.res)} yd.`}${st.worst.res>25&&st.n>2?' Re-record that one, standing right on the spot.':''}<div class="mut" style="margin-top:4px">Error includes the map drawing itself, which is not exactly to scale, so a few yards is normal.</div></div>`;
+  const grp=(title,from,to)=>`<div class="cgrp">${title}</div>`+all.slice(from,to).map((p,j)=>calRow(Object.assign({},p),from+j,st)).join('');
+  const customs=all.slice(SPOTS.length+CALX.length).map(p=>Object.assign({custom:true},p));
+  const rows=grp('Main spots',0,SPOTS.length)+grp('Roads and paths',SPOTS.length,SPOTS.length+CALX.length)+(customs.length?`<div class="cgrp">My points</div>`+customs.map((p,j)=>calRow(p,SPOTS.length+CALX.length+j,st)).join(''):'');
+  openModal(`<h3 style="margin:0 0 4px">Calibrate and check the map</h3><div class="mut small" style="margin-bottom:8px">Stand at the middle of each point, hold the phone still and tap Record. It averages 5 GPS readings. Numbers match the map. Green dots are well placed, yellow is OK, red needs a redo.</div>
+   ${sum}<div style="margin:8px 0">${calMapSvg(st)}</div>
+   ${rows}
+   <div class="card" style="margin:10px 0"><b>Add my own point</b><div class="small mut">For a road end or path you want to check. Tap ${calAdd.on?'the map above where you will stand':'the button, then tap the map'}, name it, then record it.</div>
+    ${calAdd.on?`<label>Name</label><input id="cal-name" maxlength="30" placeholder="e.g. Road by the dock" value="${esc(calAdd.name||'')}"><div class="small" style="margin-top:4px">${calAdd.x!=null?'Spot chosen on the map.':'Now tap the map above.'}</div><div class="row" style="margin-top:8px"><button class="pri grow" data-act="calsave" ${calAdd.x==null?'disabled':''}>Save point</button><button class="grow" data-act="caladdoff">Cancel</button></div>`:`<button style="width:100%;margin-top:8px" data-act="caladdon" ${calib.busy?'disabled':''}>+ Add a point</button>`}</div>
+   <div class="card" style="margin:10px 0"><b>Walk the route</b><div class="small mut" style="margin-top:2px">Start, put the phone in your hand, and walk the roads and paths, including both ends. Your path is drawn in yellow on the map. If it follows the roads you walked, tracking is accurate. If it drifts into the lake or between paths, re-record points near that part.</div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">${TR.on?`<button class="bad grow" data-act="trstop">■ Stop walking</button>`:`<button class="pri grow" data-act="trstart" ${calib.busy?'disabled':''}>▶ Start walking</button>`}<button class="grow" data-act="trclear" ${TR.on||!TR.pts.length?'disabled':''}>Clear trace</button></div>
+    <div class="small mut trstat" style="margin-top:6px">${esc(traceStatText())}</div></div>
    ${calib.msg?`<div class="small" style="color:var(--warn);margin-top:6px">${esc(calib.msg)}</div>`:''}
-   <div class="row" style="margin-top:12px"><button class="bad grow" data-act="calclear" ${calib.busy?'disabled':''}>Clear all</button><button class="pri grow" data-act="mclose">Done</button></div>`);
+   <div class="row" style="margin-top:12px"><button class="bad grow" data-act="calclear" ${calib.busy?'disabled':''}>Clear recorded</button><button class="pri grow" data-act="mclose">Done</button></div>`);
 }
 async function recordSpot(id){
   if(!navigator.geolocation){ calib.msg='GPS is not available in this browser.'; renderCalib(); return; }
