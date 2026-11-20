@@ -922,9 +922,12 @@ function mapSVG(o){
     if(!l || n-l.ts>10*60*1000) return;
     const mine = me && me.role==='player' && l.teamId===me.teamId;
     if(!o.all && !mine) return;
-    const t=team(l.teamId), stale=n-l.ts>120000, you=me&&key===me.key;
+    const t=team(l.teamId), stale=n-l.ts>120000, you=me&&key===me.key, staff=l.teamId==='leader'||String(key).match(/^[lj]_/);
+    if(staff){   // leaders and judges: small red dot, black ring, name underneath
+      s+=`<g opacity="${stale?.45:1}"><circle cx="${l.x}" cy="${l.y}" r="${(you?8:6.5)*k}" fill="#e5252a" stroke="#000" stroke-width="${2.5*k}"/>`;
+      s+=`<text x="${l.x}" y="${l.y+20*k}" fill="#fff" font-size="${13*k}" font-weight="700" text-anchor="middle" ${halo(4)}>${esc(l.name)}</text></g>`; return; }
     s+=`<g opacity="${stale?.45:1}"><circle cx="${l.x}" cy="${l.y}" r="${(you?13:10)*k}" fill="${t.color}" stroke="#fff" stroke-width="${(you?4:2.5)*k}"/>`;
-    if(o.names) s+=`<text x="${l.x}" y="${l.y+24*k}" fill="#fff" font-size="${14*k}" text-anchor="middle" ${halo(4)}>${esc(l.name)}</text>`;
+    if(o.names||mine) s+=`<text x="${l.x}" y="${l.y+24*k}" fill="${t.color}" font-size="${14*k}" font-weight="700" text-anchor="middle" ${halo(4)}>${esc(l.name)}</text>`;
     s+=`</g>`;
   });
   if(me&&me.owner) s+=traceSvg(k);
