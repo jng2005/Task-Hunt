@@ -1075,7 +1075,9 @@ function isEditing(){
   return !!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && $('#app').contains(a) && a.type!=='checkbox');
 }
 ['pause','ended'].forEach(ev=>document.addEventListener(ev,()=>{ setTimeout(()=>{ if(dirty && !isEditing() && !mediaBusy()) render(); },200); },true));
-document.addEventListener('focusout',()=>{ setTimeout(()=>{ if(dirty && !isEditing()) render(); },150); });
+let pressing=0;
+document.addEventListener('pointerdown',()=>{ pressing=Date.now(); },true);
+document.addEventListener('focusout',()=>{ setTimeout(()=>{ if(dirty && !isEditing() && Date.now()-pressing>700) render(); },150); });
 
 let joinRole='player', badTries=0, joinLock=0;
 function joinView(){
@@ -1471,6 +1473,9 @@ function openViewer(sid,i){
   v.classList.add('on');
 }
 function closeViewer(){ const v=$('#viewer'); if(v){ v.classList.remove('on'); v.innerHTML=''; } vw=null; if(dirty) render(); }
+let mbd={team:'',pts:'5',why:''};
+document.addEventListener('input',e=>{ const i=e.target&&e.target.id; if(i==='mb-pts') mbd.pts=e.target.value; else if(i==='mb-why') mbd.why=e.target.value; });
+document.addEventListener('change',e=>{ if(e.target&&e.target.id==='mb-team') mbd.team=e.target.value; });
 function backendCard(){
   if(!BACKEND||!me||!me.owner) return '';
   const up=Sync.healthy(), n=Sync.pendingCount();
@@ -1505,8 +1510,8 @@ function boostsView(){
    <label>How long: <b id="mu-ml">10</b> min</label><input id="mu-m" type="range" min="2" max="15" step="1" value="10" style="padding:0">
    <div class="row" style="margin-top:10px"><button class="pri grow" data-act="startmult" ${S.gameOn?'':'disabled'}>Start</button><button class="bad" data-act="endmult">End all</button></div>
    <div class="small mut" style="margin-top:6px">Applies to proof submitted while it's live. Penalties are never multiplied.</div></div>`;
-  h+=`<div class="card"><h3>Manual points</h3><div class="row"><div class="grow"><select id="mb-team">${S.teams.map(t=>`<option value="${t.id}">${esc(t.short)}</option>`).join('')}</select></div><div style="width:90px"><input id="mb-pts" type="number" value="5"></div></div>
-   <input id="mb-why" placeholder="Reason (shown in feed)" style="margin-top:8px"><button style="width:100%;margin-top:8px" data-act="addbonus">Add</button></div>`;
+  h+=`<div class="card"><h3>Manual points</h3><div class="row"><div class="grow"><select id="mb-team">${S.teams.map(t=>`<option value="${t.id}" ${t.id===mbd.team?'selected':''}>${esc(t.short)}</option>`).join('')}</select></div><div style="width:90px"><input id="mb-pts" type="number" inputmode="numeric" value="${esc(mbd.pts)}"></div></div>
+   <input id="mb-why" placeholder="Reason (shown in feed)" value="${esc(mbd.why)}" style="margin-top:8px"><button style="width:100%;margin-top:8px" data-act="addbonus">Add</button><div class="small mut" style="margin-top:6px">Use a minus sign to take points away.</div></div>`;
   return h;
 }
 let newT={type:'task',text:'',pts:2,fail:-1,kind:'photo'};
@@ -1863,8 +1868,11 @@ document.addEventListener('click',e=>{
     ev(`⚡ ${x}× points ${who==='all'?'for everyone':'for '+team(who).short} for ${m} min`,who==='all'?['all']:['team:'+who,'leader'],{snd:'boost'}); save();
   }
   else if(a==='endmult'){ S.mult={global:null,teams:{}}; ev('Multipliers ended',['all']); save(); }
-  else if(a==='addbonus'){ const p=parseInt($('#mb-pts').value,10); if(!p) return; const why=$('#mb-why').value.trim()||'Bonus';
-    S.bonus.push({teamId:$('#mb-team').value,pts:p,reason:why,ts:Date.now()}); ev(`${team($('#mb-team').value).short} ${signed(p)}: ${why}`,['all']); save(); }
+  else if(a==='addbonus'){ const tid=$('#mb-team').value, p=Math.round(parseFloat(String($('#mb-pts').value).replace(',','.')));
+    if(!p||isNaN(p)){ toast('Type how many points first. Use a minus sign to take points away.'); const el=$('#mb-pts'); if(el) el.focus(); return; }
+    const why=$('#mb-why').value.trim()||'Bonus'; S=load()||S;
+    S.bonus.push({teamId:tid,pts:p,reason:why,ts:Date.now()}); ev(`${team(tid).short} ${signed(p)}: ${why}`,['all']);
+    mbd={team:tid,pts:'5',why:''}; save(); toast(`${team(tid).short} ${signed(p)} points added. Total now ${scoreOf(tid).total}.`); }
   else if(a==='nt'){ newT.type=v; render(); }
   else if(a==='addtask'){
     const text=$('#nt-text').value.trim(); if(!text){ toast('Describe it first.'); return; }
