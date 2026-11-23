@@ -283,7 +283,8 @@ const CALX = [
 /* Demo: the measured area is a 100 m x 100 m square (109.4 yards) so the whole thing can be walked and calibrated in a park or yard.
    The 5 spots sit inside it, the 6 calibration points sit on its edge. */
 const DEMO_SIDE = 100*1.09361, DEMO_BOX = {x0:MW/2-DEMO_SIDE/2, y0:MH/2-DEMO_SIDE/2, x1:MW/2+DEMO_SIDE/2, y1:MH/2+DEMO_SIDE/2};
-if(DEMO){
+let DEMO_SQUARE = DEMO && (()=>{ try{ return localStorage.getItem('th_demo_map')!=='real'; }catch(e){ return true; } })();
+if(DEMO_SQUARE){
   const cx=MW/2, cy=MH/2, q=DEMO_SIDE*.32, b=DEMO_BOX, put=(o,id,x,y)=>{ const s=o.find(z=>z.id===id); s.x=+x.toFixed(1); s.y=+y.toFixed(1); };
   put(SPOTS,'amph',cx-q,cy-q); put(SPOTS,'hubbard',cx+q,cy-q); put(SPOTS,'beach',cx-q,cy+q); put(SPOTS,'dock',cx+q,cy+q); put(SPOTS,'office',cx,cy);
   put(CALX,'x_grand',b.x0,b.y0); put(CALX,'x_oneway',b.x1,b.y0); put(CALX,'x_summit',cx,b.y0); put(CALX,'x_west',b.x0,b.y1); put(CALX,'x_south',cx,b.y1); put(CALX,'x_prog',b.x1,b.y1);
@@ -917,7 +918,7 @@ function mapSVG(o){
   const live=S.pings.filter(p=>p.deadline>n), act=new Set(live.map(p=>p.spot)), zones={}; live.forEach(p=>zones[p.spot]=p.zone||15);
   const halo=w=>`stroke="#0b1624" stroke-width="${(w*k).toFixed(2)}" paint-order="stroke" stroke-linejoin="round"`;
   let s=`<svg class="map" viewBox="${vb.map(v=>+v.toFixed(2)).join(' ')}" data-place="${o.place?1:0}" ${o.fs?'data-fs="1"':''}><use href="#campmap"/>`;
-  if(DEMO){ const b=DEMO_BOX; s+=`<rect x="${b.x0}" y="${b.y0}" width="${DEMO_SIDE}" height="${DEMO_SIDE}" fill="#ffffff10" stroke="#ffc857" stroke-width="${2*k}" stroke-dasharray="${8*k} ${6*k}"/><text x="${(b.x0+b.x1)/2}" y="${b.y1+16*k}" fill="#ffc857" font-size="${13*k}" font-weight="700" text-anchor="middle" ${halo(4)}>Demo area · 100 m × 100 m</text>`; }
+  if(DEMO_SQUARE){ const b=DEMO_BOX; s+=`<rect x="${b.x0}" y="${b.y0}" width="${DEMO_SIDE}" height="${DEMO_SIDE}" fill="#ffffff10" stroke="#ffc857" stroke-width="${2*k}" stroke-dasharray="${8*k} ${6*k}"/><text x="${(b.x0+b.x1)/2}" y="${b.y1+16*k}" fill="#ffc857" font-size="${13*k}" font-weight="700" text-anchor="middle" ${halo(4)}>Demo area · 100 m × 100 m</text>`; }
   SPOTS.forEach(sp=>{
     s+=`<g ${o.spotClick?`data-act="mapspot" data-id="${sp.id}" style="cursor:pointer"`:''}>`;
     if(act.has(sp.id)) s+=`<circle cx="${sp.x}" cy="${sp.y}" r="${zones[sp.id]}" fill="#ffc85244" stroke="#ff9d00" stroke-width="${2*k}" stroke-dasharray="${6*k} ${5*k}"/><circle class="pulse" cx="${sp.x}" cy="${sp.y}" r="12"/>`;
@@ -1931,6 +1932,7 @@ document.addEventListener('click',e=>{
   else if(a==='resume'){ const b=backup(); if(b) setMe(b); lastToast=Date.now(); }
   else if(a==='simoff'){ simOffline=!simOffline; if(!simOffline) flushOutbox(); closeModal(); render(); toast(simOffline?'Simulating no signal.':'Signal is back.'); }
   else if(a==='demo') openDemo();
+  else if(a==='demomap'){ try{ localStorage.setItem('th_demo_map', DEMO_SQUARE?'real':'square'); }catch(e){} location.reload(); }
   else if(a==='botsToggle'){ toggleBots(); closeModal(); }
   else if(a==='reset'){ S=seed(); closeModal(); save(); toast('Demo reset.'); }
 });
@@ -2480,6 +2482,7 @@ function openDemo(){
   openModal(`<h3 style="margin:0 0 6px">Demo tools</h3><div class="mut small" style="margin-bottom:10px">Prototype only. These simulate a busy camp so you can see the live parts without 20 phones.</div>
    <button class="${botTimer?'bad':'pri'}" style="width:100%" data-act="botsToggle">${botTimer?'Stop simulated teams':'Start simulated teams'}</button>
    <div class="small mut" style="margin:6px 0 12px">Bots wander the map, submit proof, and check in to pings.</div>
+   <button style="width:100%;margin-bottom:8px" data-act="demomap">Map: ${DEMO_SQUARE?'100 m square (tap for real camp map)':'real camp map (tap for 100 m square)'}</button>
    <button style="width:100%;margin-bottom:8px" data-act="simoff">${simOffline?'Bring signal back':'Simulate no signal (this phone)'}</button>
    <button style="width:100%;margin-bottom:8px" data-act="setup">Open phone setup</button>
    <button class="bad" style="width:100%" data-act="reset">Reset everything</button>
