@@ -282,12 +282,31 @@ const CALX = [
 ];
 /* Demo: the measured area is a 100 m x 100 m square (109.4 yards) so the whole thing can be walked and calibrated in a park or yard.
    The 5 spots sit inside it, the 6 calibration points sit on its edge. */
-const DEMO_SIDE = 100*1.09361, DEMO_BOX = {x0:MW/2-DEMO_SIDE/2, y0:MH/2-DEMO_SIDE/2, x1:MW/2+DEMO_SIDE/2, y1:MH/2+DEMO_SIDE/2};
+const YPM = 1.09361;   // yards per meter; one map unit is one yard
+const demoCfg = (()=>{ let c={}; try{ c=JSON.parse(localStorage.getItem('th_demo_box')||'{}')||{}; }catch(e){}
+  const side=Math.min(600,Math.max(20,+c.side||100)), half=side*YPM/2;
+  const cx=Math.min(MW-half,Math.max(half,MW/2+(+c.dx||0)*YPM)), cy=Math.min(MH-half,Math.max(half,MH/2+(+c.dy||0)*YPM));
+  return {side,cx,cy,dx:Math.round((cx-MW/2)/YPM),dy:Math.round((cy-MH/2)/YPM)}; })();
+const DEMO_SIDE = demoCfg.side*YPM, DEMO_BOX = {x0:demoCfg.cx-DEMO_SIDE/2, y0:demoCfg.cy-DEMO_SIDE/2, x1:demoCfg.cx+DEMO_SIDE/2, y1:demoCfg.cy+DEMO_SIDE/2};
 let DEMO_SQUARE = DEMO && (()=>{ try{ return localStorage.getItem('th_demo_map')!=='real'; }catch(e){ return true; } })();
 if(DEMO_SQUARE){
-  const cx=MW/2, cy=MH/2, q=DEMO_SIDE*.32, b=DEMO_BOX, put=(o,id,x,y)=>{ const s=o.find(z=>z.id===id); s.x=+x.toFixed(1); s.y=+y.toFixed(1); };
+  const cx=demoCfg.cx, cy=demoCfg.cy, q=DEMO_SIDE*.32, b=DEMO_BOX, put=(o,id,x,y)=>{ const s=o.find(z=>z.id===id); s.x=+x.toFixed(1); s.y=+y.toFixed(1); };
   put(SPOTS,'amph',cx-q,cy-q); put(SPOTS,'hubbard',cx+q,cy-q); put(SPOTS,'beach',cx-q,cy+q); put(SPOTS,'dock',cx+q,cy+q); put(SPOTS,'office',cx,cy);
   put(CALX,'x_grand',b.x0,b.y0); put(CALX,'x_oneway',b.x1,b.y0); put(CALX,'x_summit',cx,b.y0); put(CALX,'x_west',b.x0,b.y1); put(CALX,'x_south',cx,b.y1); put(CALX,'x_prog',b.x1,b.y1);
+}
+/* A ping can point at a temporary pin instead of a fixed spot. The pin lives on the ping itself (p.pt), so it syncs and expires with the ping. */
+const spotOf=p=>SPOTS.find(s=>s.id===p.spot)||(p.pt?{id:p.spot,name:p.pt.name,x:p.pt.x,y:p.pt.y}:null);
+function randomPin(){
+  const all=[...SPOTS,...CALX], R=a=>a[Math.floor(Math.random()*a.length)]; let best=null;
+  for(let i=0;i<40;i++){
+    let x,y;
+    if(DEMO_SQUARE){ const m=Math.min(10,DEMO_SIDE/6); x=DEMO_BOX.x0+m+Math.random()*(DEMO_SIDE-2*m); y=DEMO_BOX.y0+m+Math.random()*(DEMO_SIDE-2*m); }
+    else { const a=R(all),b=R(all),c=R(all); let u=Math.random(),v=Math.random(); if(u+v>1){u=1-u;v=1-v;} x=a.x+u*(b.x-a.x)+v*(c.x-a.x); y=a.y+u*(b.y-a.y)+v*(c.y-a.y); }
+    const d=Math.min(...SPOTS.map(s=>Math.hypot(s.x-x,s.y-y)));
+    if(!best||d>best.d) best={x:+x.toFixed(1),y:+y.toFixed(1),d};
+    if(d>=40) break;
+  }
+  return {name:'Surprise pin',x:best.x,y:best.y};
 }
 const calPts=()=>[...SPOTS,...CALX,...((S&&S.cpts)||[])];
 /* Placeholder GPS box (center is an unverified guess near Zephyr Cove). Real build: set from on-site calibration. */
@@ -918,8 +937,10 @@ function mapSVG(o){
   const live=S.pings.filter(p=>p.deadline>n), act=new Set(live.map(p=>p.spot)), zones={}; live.forEach(p=>zones[p.spot]=p.zone||15);
   const halo=w=>`stroke="#0b1624" stroke-width="${(w*k).toFixed(2)}" paint-order="stroke" stroke-linejoin="round"`;
   let s=`<svg class="map" viewBox="${vb.map(v=>+v.toFixed(2)).join(' ')}" data-place="${o.place?1:0}" ${o.fs?'data-fs="1"':''}><use href="#campmap"/>`;
-  if(DEMO_SQUARE){ const b=DEMO_BOX; s+=`<rect x="${b.x0}" y="${b.y0}" width="${DEMO_SIDE}" height="${DEMO_SIDE}" fill="#ffffff10" stroke="#ffc857" stroke-width="${2*k}" stroke-dasharray="${8*k} ${6*k}"/><text x="${(b.x0+b.x1)/2}" y="${b.y1+16*k}" fill="#ffc857" font-size="${13*k}" font-weight="700" text-anchor="middle" ${halo(4)}>Demo area · 100 m × 100 m</text>`; }
-  SPOTS.forEach(sp=>{
+  if(DEMO_SQUARE){ const b=DEMO_BOX; s+=`<rect x="${b.x0}" y="${b.y0}" width="${DEMO_SIDE}" height="${DEMO_SIDE}" fill="#ffffff10" stroke="#ffc857" stroke-width="${2*k}" stroke-dasharray="${8*k} ${6*k}"/><text x="${(b.x0+b.x1)/2}" y="${b.y1+16*k}" fill="#ffc857" font-size="${13*k}" font-weight="700" text-anchor="middle" ${halo(4)}>Demo area · ${demoCfg.side} m × ${demoCfg.side} m</text>`; }
+  const pins=[], seen=new Set(); live.forEach(p=>{ if(p.pt&&!seen.has(p.spot)){ seen.add(p.spot); pins.push({id:p.spot,name:p.pt.name,x:p.pt.x,y:p.pt.y}); } });
+  if(me&&me.owner&&pingDraft.pt) pins.push({id:'__pin',name:pingDraft.pt.name+' (draft)',x:pingDraft.pt.x,y:pingDraft.pt.y});
+  [...SPOTS,...pins].forEach(sp=>{
     s+=`<g ${o.spotClick?`data-act="mapspot" data-id="${sp.id}" style="cursor:pointer"`:''}>`;
     if(act.has(sp.id)) s+=`<circle cx="${sp.x}" cy="${sp.y}" r="${zones[sp.id]}" fill="#ffc85244" stroke="#ff9d00" stroke-width="${2*k}" stroke-dasharray="${6*k} ${5*k}"/><circle class="pulse" cx="${sp.x}" cy="${sp.y}" r="12"/>`;
     s+=`<circle cx="${sp.x}" cy="${sp.y}" r="${12*k}" fill="${act.has(sp.id)?'#ffc857':'#233f60'}" stroke="#fff" stroke-width="${2.5*k}"/>`;
@@ -1123,7 +1144,7 @@ function claimPing(teamId,p){
   p.checkins=p.checkins||{}; if(p.checkins[teamId]) return {ok:false,msg:'Your team already checked in.'};
   const rank=Object.keys(p.checkins).length, now=Date.now(), r=pingReward(p,rank,teamId,now);
   if(!r) return {ok:false,msg:'All the reward places are taken.'};
-  const sp=SPOTS.find(x=>x.id===p.spot)||{name:p.spot};
+  const sp=(spotOf(p)||{name:p.spot});
   if(r.type==='points') S.bonus.push({teamId,pts:r.pts,reason:`Ping ${ORD[rank]}: ${sp.name}`,ts:now}); else grantMult(teamId,r.x,r.min);
   p.checkins[teamId]={ts:now,rank,text:rewardTxt(r)};
   const left=p.places.length-rank-1;
@@ -1135,7 +1156,7 @@ async function claimPingSrv(teamId,p0){
   let r; try{ r=await Sync.ad.rpc('claim_ping',{p_ping:p0.id}); }catch(e){ Sync.lastErr='claim: '+(e.message||e); return {ok:false,msg:'Could not reach the server. Try again.'}; }
   if(!r.ok) return {ok:false,msg:r.msg};
   const p=S.pings.find(x=>x.id===p0.id)||p0, rank=r.rank, now=r.ts, rw=pingReward(p,rank,teamId,now)||{type:'points',pts:1};
-  const sp=SPOTS.find(x=>x.id===p.spot)||{name:p.spot};
+  const sp=(spotOf(p)||{name:p.spot});
   if(rw.type==='points') S.bonus.push({teamId,pts:rw.pts,reason:`Ping ${ORD[rank]}: ${sp.name}`,ts:now}); else grantMult(teamId,rw.x,rw.min);
   p.checkins=p.checkins||{}; p.checkins[teamId]={ts:now,rank,text:rewardTxt(rw)};
   const left=p.places.length-rank-1;
@@ -1181,7 +1202,7 @@ function pingPrompt(){
   if(!me||me.role!=='player'||!S.gameOn||$('#modal').classList.contains('on')) return;
   const loc=S.locs[me.key]; if(!loc||Date.now()-loc.ts>120000) return;
   activePings(me.teamId).forEach(p=>{
-    const sp=SPOTS.find(s=>s.id===p.spot); if(!sp) return; const d=distYd(loc,sp), taken=Object.keys(p.checkins||{}).length;
+    const sp=spotOf(p); if(!sp) return; const d=distYd(loc,sp), taken=Object.keys(p.checkins||{}).length;
     if(d>p.zone*1.5) delete promptedPing[p.id];
     if(d>p.zone||promptedPing[p.id]||(p.checkins&&p.checkins[me.teamId])||taken>=p.places.length) return;
     promptedPing[p.id]=1; const r=pingReward(p,taken,me.teamId,Date.now()); snd('alert');
@@ -1201,7 +1222,7 @@ function freshDone(){
 function bannerHtml(){
   let h=''; const n=Date.now();
   activePings(me.teamId).forEach(p=>{
-    const sp=SPOTS.find(s=>s.id===p.spot)||{name:p.spot}, mine=p.checkins&&p.checkins[me.teamId], loc=S.locs[me.key];
+    const sp=(spotOf(p)||{name:p.spot}), mine=p.checkins&&p.checkins[me.teamId], loc=S.locs[me.key];
     const d=loc&&sp.x!=null?Math.round(distYd(loc,sp)):null, taken=Object.keys(p.checkins||{}).length;
     const byRank={}; Object.entries(p.checkins||{}).forEach(([k,c])=>byRank[c.rank]=k);
     const lab=pl=>p.type==='mult'?`${pl.x}× ${pl.min}m`:`+${pl.pts}`;
@@ -1381,11 +1402,11 @@ function leaderMap(){
   S.teams.forEach(t=>{ const m=locs.filter(l=>l.teamId===t.id); h+=`<div class="card"><div class="row sp"><span><span class="dot" style="background:${t.color}"></span> <b>${esc(t.short)}</b></span><span class="small mut">${m.length} sharing</span></div>${m.map(l=>`<div class="small">${esc(l.name)} <span class="mut">· ${ago(l.ts)}${l.acc?' · ±'+Math.round(l.acc)+' m':''}</span></div>`).join('')}</div>`; });
   return h;
 }
-let pingDraft={spot:'hubbard',min:5,target:'all',msg:'',type:'points',n:3,zone:15,decay:0,
+let pingDraft={pt:null,spot:'hubbard',min:5,target:'all',msg:'',type:'points',n:3,zone:15,decay:0,
   places:[{pts:10,x:3,min:10},{pts:6,x:2.5,min:8},{pts:4,x:2,min:6},{pts:2,x:2,min:4}]};
 function pgSync(){
   const g=id=>document.getElementById(id); if(!g('pg-spot')) return; const d=pingDraft;
-  d.spot=g('pg-spot').value; d.min=+g('pg-min').value; d.target=g('pg-target').value; d.msg=g('pg-msg').value.trim();
+  d.spot=g('pg-spot').value; if(d.spot==='__pin'&&!d.pt) d.spot='hubbard'; d.min=+g('pg-min').value; d.target=g('pg-target').value; d.msg=g('pg-msg').value.trim();
   d.n=+g('pg-n').value; d.zone=+g('pg-zone').value; d.decay=+g('pg-decay').value;
   for(let i=0;i<4;i++){ const p=g('pg-p'+i), x=g('pg-x'+i), m=g('pg-m'+i);
     if(p) d.places[i].pts=Math.max(1,parseInt(p.value,10)||d.places[i].pts); if(x) d.places[i].x=parseFloat(x.value); if(m) d.places[i].min=+m.value; }
@@ -1396,7 +1417,9 @@ function pingsView(){
     ?`<input id="pg-p${i}" type="number" min="1" value="${pl.pts}"><span class="mut small">pts</span>`
     :`<select id="pg-x${i}">${[2,2.5,3].map(x=>`<option ${pl.x===x?'selected':''}>${x}</option>`).join('')}</select><span class="mut small">× for</span><select id="pg-m${i}">${[2,3,5,8,10,15].map(m=>`<option value="${m}" ${pl.min===m?'selected':''}>${m} min</option>`).join('')}</select>`)+`</div>`).join('');
   let h=`<div class="card"><h3>Send a location ping</h3>
-   <label>Where</label><select id="pg-spot">${SPOTS.map(s=>`<option value="${s.id}" ${d.spot===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+   <label>Where</label><select id="pg-spot">${SPOTS.map(s=>`<option value="${s.id}" ${d.spot===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}${d.pt?`<option value="__pin" ${d.spot==='__pin'?'selected':''}>📍 ${esc(d.pt.name)} (random)</option>`:''}</select>
+   <div class="row" style="margin-top:6px"><button class="sm" data-act="droppin">${d.pt?'🎲 Re-roll pin':'🎲 Drop a random pin'}</button>${d.pt?`<button class="ghost sm" data-act="clearpin">Remove pin</button>`:''}</div>
+   <div class="small mut">${d.pt?'The pin is shown on the map and expires with the ping.':'Picks a random spot on the map as a one-time place for this ping.'}</div>
    <div class="row"><div class="grow"><label>Time to get there</label><select id="pg-min">${[2,5,10,15].map(m=>`<option value="${m}" ${d.min===m?'selected':''}>${m} min</option>`).join('')}</select></div>
    <div class="grow"><label>Who</label><select id="pg-target"><option value="all">All teams</option>${S.teams.map(t=>`<option value="${t.id}" ${d.target===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div></div>
    <label>Message (optional)</label><input id="pg-msg" maxlength="80" placeholder="Whole team, hats on!" value="${esc(d.msg)}">
@@ -1411,7 +1434,7 @@ function pingsView(){
    <button class="pri" style="width:100%;margin-top:10px" data-act="sendping" ${S.gameOn?'':'disabled'}>Send ping</button></div>`;
   const ps=[...S.pings].reverse().slice(0,8);
   h+=`<div class="card"><h3>Recent pings</h3>`+(ps.length?ps.map(p=>{
-    const sp=SPOTS.find(s=>s.id===p.spot)||{name:p.spot}, live=p.deadline>n;
+    const sp=(spotOf(p)||{name:p.spot}), live=p.deadline>n;
     const tt=(p.target==='all'?S.teams:[team(p.target)]);
     return `<div style="padding:6px 0;border-top:1px solid var(--line)"><div class="row sp"><b>${esc(sp.name)}</b><span class="small ${live?'':'mut'}">${live?`<span data-until="${p.deadline}">${mmss(p.deadline-n)}</span> left`:'ended'}</span></div>
       <div class="small mut">${p.zone} yd zone · ${p.places.length} place${p.places.length>1?'s':''} · ${p.type==='mult'?'multiplier':'bonus points'}${p.decay?' · '+p.decay+'%/min decay':''}</div>
@@ -1754,7 +1777,7 @@ async function checkin(id){
   S=load()||S;
   const p=S.pings.find(x=>x.id===id); if(!p||p.deadline<Date.now()) return toast('Too late, that ping ended.');
   if(p.checkins&&p.checkins[me.teamId]) return;
-  const sp=SPOTS.find(s=>s.id===p.spot), loc=S.locs[me.key];
+  const sp=spotOf(p), loc=S.locs[me.key];
   if(!loc) return toast('We do not have your location yet. Open Phone setup and allow precise location.');
   if(!shareNote && Date.now()-loc.ts>120000) return toast('Your location is out of date. Wait a few seconds for a new GPS fix, then try again.');
   const d=distYd(loc,sp);
@@ -1824,12 +1847,16 @@ document.addEventListener('click',e=>{
   else if(a==='reject') decide(id,'rejected',0,'',($('#rn-'+id).value||'').trim());
   else if(a==='undo'){ const s=S.subs.find(x=>x.id===id); if(s){ s.status='pending'; s.pts=0; s.label=''; ev('A judge reopened a decision',['judge','leader'],{toast:false}); save(); } }
   else if(a==='mapspot'){ if(!me.owner) return; closeFs(); pingDraft.spot=id; tab='pings'; render(); }
+  else if(a==='droppin'){ pgSync(); pingDraft.pt=randomPin(); pingDraft.spot='__pin'; render(); toast('Pin dropped. Check the map, re-roll if you do not like it.'); }
+  else if(a==='clearpin'){ pgSync(); pingDraft.pt=null; if(pingDraft.spot==='__pin') pingDraft.spot='hubbard'; render(); }
   else if(a==='pgtype'){ pgSync(); pingDraft.type=v; render(); }
   else if(a==='sendping'){
     pgSync(); const d=pingDraft, n0=Date.now(); if(!S.gameOn) return;
     const places=d.places.slice(0,d.n).map(x=>d.type==='points'?{pts:x.pts}:{x:x.x,min:x.min});
-    S.pings.push({id:uid(),spot:d.spot,ts:n0,deadline:n0+d.min*60000,type:d.type,places,decay:d.decay,zone:d.zone,msg:d.msg,target:d.target,checkins:{}});
-    const sp=SPOTS.find(s=>s.id===d.spot), first=places[0];
+    const usePin=d.spot==='__pin'&&d.pt, pid=uid();
+    S.pings.push(Object.assign({id:pid,spot:usePin?'pin_'+pid:d.spot,ts:n0,deadline:n0+d.min*60000,type:d.type,places,decay:d.decay,zone:d.zone,msg:d.msg,target:d.target,checkins:{}},usePin?{pt:{name:d.pt.name,x:d.pt.x,y:d.pt.y}}:{}));
+    const sp=usePin?d.pt:SPOTS.find(s=>s.id===d.spot), first=places[0];
+    if(usePin){ d.pt=null; d.spot='hubbard'; }
     ev(`📍 Ping! Get within ${d.zone} yards of ${sp.name} in ${d.min} min. ${ORD[0]} place: ${rewardTxt(d.type==='points'?{type:'points',pts:first.pts}:{type:'mult',x:first.x,min:first.min})}`,d.target==='all'?['player','leader']:['team:'+d.target,'leader'],{snd:'alert'});
     save(); toast('Ping sent.');
   }
@@ -1932,6 +1959,9 @@ document.addEventListener('click',e=>{
   else if(a==='resume'){ const b=backup(); if(b) setMe(b); lastToast=Date.now(); }
   else if(a==='simoff'){ simOffline=!simOffline; if(!simOffline) flushOutbox(); closeModal(); render(); toast(simOffline?'Simulating no signal.':'Signal is back.'); }
   else if(a==='demo') openDemo();
+  else if(a==='demobox'){ const g=i=>parseFloat((document.getElementById(i)||{}).value); const c={side:g('dm-side')||100,dx:g('dm-dx')||0,dy:g('dm-dy')||0};
+    try{ localStorage.setItem('th_demo_box',JSON.stringify(c)); }catch(e){} location.reload(); }
+  else if(a==='demoboxreset'){ try{ localStorage.removeItem('th_demo_box'); }catch(e){} location.reload(); }
   else if(a==='demomap'){ try{ localStorage.setItem('th_demo_map', DEMO_SQUARE?'real':'square'); }catch(e){} location.reload(); }
   else if(a==='botsToggle'){ toggleBots(); closeModal(); }
   else if(a==='reset'){ S=seed(); closeModal(); save(); toast('Demo reset.'); }
@@ -2483,6 +2513,12 @@ function openDemo(){
    <button class="${botTimer?'bad':'pri'}" style="width:100%" data-act="botsToggle">${botTimer?'Stop simulated teams':'Start simulated teams'}</button>
    <div class="small mut" style="margin:6px 0 12px">Bots wander the map, submit proof, and check in to pings.</div>
    <button style="width:100%;margin-bottom:8px" data-act="demomap">Map: ${DEMO_SQUARE?'100 m square (tap for real camp map)':'real camp map (tap for 100 m square)'}</button>
+   ${DEMO_SQUARE?`<div class="card" style="margin:0 0 8px;padding:10px"><b class="small">Square area</b>
+     <div class="row" style="margin-top:6px"><div class="grow"><label>Side (m)</label><input id="dm-side" type="number" min="20" max="600" value="${demoCfg.side}"></div>
+     <div class="grow"><label>East/west (m)</label><input id="dm-dx" type="number" value="${demoCfg.dx}"></div>
+     <div class="grow"><label>North/south (m)</label><input id="dm-dy" type="number" value="${demoCfg.dy}"></div></div>
+     <div class="small mut" style="margin:4px 0 6px">Location is measured from the middle of the map (+ is east / south). The 5 spots and 6 edge points rescale to fit. Page reloads.</div>
+     <div class="row"><button class="pri sm" data-act="demobox">Apply</button><button class="sm" data-act="demoboxreset">Reset to 100 m</button></div></div>`:''}
    <button style="width:100%;margin-bottom:8px" data-act="simoff">${simOffline?'Bring signal back':'Simulate no signal (this phone)'}</button>
    <button style="width:100%;margin-bottom:8px" data-act="setup">Open phone setup</button>
    <button class="bad" style="width:100%" data-act="reset">Reset everything</button>
